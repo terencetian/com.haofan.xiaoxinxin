@@ -35,7 +35,7 @@
 
 ### 方式一：下载安装包（推荐）
 
-到 [Releases](../../releases) 页下载最新的 `.dmg`，打开后把「小薪薪」拖进「应用程序」。
+直接下载 [xiaoxinxin-v1.3.dmg](https://github.com/terencetian/com.haofan.xiaoxinxin/releases/latest)，打开后把「小薪薪」拖进「应用程序」。
 
 > 应用采用 **ad-hoc 签名**（未购买 Apple 开发者账号），首次打开需在
 > 「系统设置 → 隐私与安全性」底部点「仍要打开」，或执行：
@@ -49,7 +49,7 @@
 需要 Xcode Command Line Tools（`xcode-select --install`）。
 
 ```bash
-git clone <本仓库地址>
+git clone https://github.com/terencetian/com.haofan.xiaoxinxin.git
 cd 工资到账器
 
 # 构建 + 签名 + 安装到 /Applications，一条命令
@@ -81,7 +81,7 @@ entitlements 会被覆盖导致不注册）→ `ditto` 安装 → 重新注册�
 
 ## 版本
 
-当前 **v1.3**，更新记录见 [Releases](../../releases)。
+当前 **v1.3**，更新记录见 [Releases](https://github.com/terencetian/com.haofan.xiaoxinxin/releases)。
 
 ## 版权
 
