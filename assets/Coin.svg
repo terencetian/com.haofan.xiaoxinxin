@@ -1,0 +1,85 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 币身金属：左上受光 -->
+    <radialGradient id="c-face" cx="0.33" cy="0.26" r="0.9">
+      <stop offset="0"    stop-color="#FFFBEA"/>
+      <stop offset="0.18" stop-color="#FFE8A8"/>
+      <stop offset="0.46" stop-color="#FFC63F"/>
+      <stop offset="0.74" stop-color="#EDA011"/>
+      <stop offset="1"    stop-color="#B96C00"/>
+    </radialGradient>
+
+    <!-- 币面（内凹）：上亮下深 -->
+    <linearGradient id="c-field" x1="0.25" y1="0" x2="0.75" y2="1">
+      <stop offset="0"    stop-color="#FFDD80"/>
+      <stop offset="0.38" stop-color="#FBB52B"/>
+      <stop offset="0.78" stop-color="#E89605"/>
+      <stop offset="1"    stop-color="#D07F02"/>
+    </linearGradient>
+
+    <!-- ¥ 实心色 -->
+    <linearGradient id="c-sym" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0"    stop-color="#8A4600"/>
+      <stop offset="0.6"  stop-color="#743600"/>
+      <stop offset="1"    stop-color="#5A2700"/>
+    </linearGradient>
+
+    <!-- 外圈镜面 -->
+    <linearGradient id="c-rim" x1="0.12" y1="0.02" x2="0.88" y2="0.98">
+      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.92"/>
+      <stop offset="0.22" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.04"/>
+      <stop offset="0.84" stop-color="#FFEDB8" stop-opacity="0.42"/>
+      <stop offset="1"    stop-color="#FFFFFF" stop-opacity="0.72"/>
+    </linearGradient>
+
+    <linearGradient id="c-recess" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"    stop-color="#7A3D00" stop-opacity="0.62"/>
+      <stop offset="0.5"  stop-color="#7A3D00" stop-opacity="0.12"/>
+      <stop offset="1"    stop-color="#7A3D00" stop-opacity="0"/>
+    </linearGradient>
+
+    <filter id="c-b4"  x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="4"/></filter>
+    <filter id="c-b10" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="10"/></filter>
+    <filter id="c-b18" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="18"/></filter>
+
+    <clipPath id="c-coin"><circle cx="256" cy="256" r="248"/></clipPath>
+    <clipPath id="c-inner"><circle cx="256" cy="256" r="212"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#c-coin)">
+    <!-- 币身 -->
+    <circle cx="256" cy="256" r="248" fill="url(#c-face)"/>
+
+    <!-- 内凹币面 -->
+    <circle cx="256" cy="256" r="212" fill="url(#c-field)"/>
+
+    <!-- 币面顶部内阴影：做出下沉感 -->
+    <g clip-path="url(#c-inner)">
+      <circle cx="256" cy="256" r="212" fill="none" stroke="#7A3D00" stroke-opacity="0.5" stroke-width="30" filter="url(#c-b18)"/>
+      <rect x="0" y="0" width="512" height="250" fill="url(#c-recess)"/>
+      <!-- 左下环境光 -->
+      <ellipse cx="150" cy="330" rx="130" ry="90" fill="#FFE9B0" opacity="0.22" filter="url(#c-b18)"/>
+    </g>
+
+    <!-- 红漆凹环：让币面与金币进度条区分，并给吸色提供红色 -->
+    <circle cx="256" cy="256" r="211" fill="none" stroke="#A3172C" stroke-width="9"/>
+    <circle cx="256" cy="256" r="215.6" fill="none" stroke="#FFF3D2" stroke-opacity="0.45" stroke-width="1.8"/>
+    <circle cx="256" cy="256" r="206.4" fill="none" stroke="#700A17" stroke-opacity="0.5" stroke-width="2"/>
+
+    <!-- ¥ -->
+    <path d="M150 140 L256 232 L362 140 M256 232 L256 372 M176 290 L336 290 M176 342 L336 342"
+          fill="none" stroke="#5E2700" stroke-opacity="0.34" stroke-width="32"
+          stroke-linecap="round" stroke-linejoin="round" transform="translate(0,7)" filter="url(#c-b4)"/>
+    <path d="M150 140 L256 232 L362 140 M256 232 L256 372 M176 290 L336 290 M176 342 L336 342"
+          fill="none" stroke="#6B3200" stroke-width="31"
+          stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- 左上大面积柔光 -->
+    <ellipse cx="176" cy="146" rx="132" ry="86" fill="#FFFFFF" opacity="0.16" filter="url(#c-b18)"/>
+
+    <!-- 外圈镜面 + 收边 -->
+    <circle cx="256" cy="256" r="244" fill="none" stroke="url(#c-rim)" stroke-width="8"/>
+    <circle cx="256" cy="256" r="247" fill="none" stroke="#FFFFFF" stroke-opacity="0.20" stroke-width="2"/>
+  </g>
+</svg>

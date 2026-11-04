@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+._*
+
+# 构建产物
+build/
+*.app/
+*.appex/
+*.dmg
+
+# 手册导出与预览（体积大，随 Release 分发）
+小薪薪-交付/
+小薪薪产品手册.pdf
+小薪薪产品手册.html
+手册排版.html
+
+# 历史版本
+_旧版本/
+
+# Xcode / Swift 临时文件
+*.xcuserstate
+.swiftpm/
+.BC.T_*
