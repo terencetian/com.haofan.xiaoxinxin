@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1080px; height:1440px; }
+  body {
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    background:#0a1526;
+    color:#eef3fb;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  .poster {
+    position:relative; width:1080px; height:1440px;
+    padding:64px 76px 56px;
+    display:flex; flex-direction:column;
+    background:
+      radial-gradient(720px 520px at 88% 4%, rgba(255,210,87,.20), transparent 62%),
+      radial-gradient(640px 640px at 6% 96%, rgba(255,210,87,.10), transparent 60%),
+      linear-gradient(165deg,#0f1f38 0%,#0a1526 42%,#08111f 100%);
+  }
+  .grid {
+    position:absolute; inset:0;
+    background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),
+                     linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);
+    background-size:72px 72px; opacity:.55; opacity:.55;
+    mask-image:radial-gradient(circle at 50% 40%, #000 30%, transparent 82%);
+  }
+  .inner { position:relative; z-index:2; display:flex; flex-direction:column; height:100%; }
+
+  /* 顶部品牌 */
+  .brand { display:flex; align-items:center; gap:20px; }
+  .brand img { width:92px; height:92px; border-radius:22px;
+    box-shadow:0 10px 34px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.10); }
+  .brand .name { font-size:44px; font-weight:800; letter-spacing:2px; }
+  .brand .tag {
+    margin-top:8px; font-size:20px; color:#9db0cc; letter-spacing:1.2px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .badge {
+    font-size:17px; color:#0a1526; font-weight:700; letter-spacing:.5px;
+    background:linear-gradient(135deg,#ffd257,#f5a623);
+    padding:5px 12px; border-radius:8px;
+  }
+
+  /* 主标题 */
+  h1 {
+    margin-top:44px;
+    font-size:80px; line-height:1.18; font-weight:800; letter-spacing:-1px;
+    background:linear-gradient(120deg,#fff4cf 0%,#ffd257 44%,#f5a623 100%);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .sub { margin-top:18px; font-size:29px; color:#9db0cc; letter-spacing:.6px; }
+  .sub b { color:#eef3fb; font-weight:600; }
+
+  /* 截图 */
+  .shot { margin-top:36px; display:flex; justify-content:center; }
+  .shot img {
+    width:400px; border-radius:24px;
+    border:1px solid rgba(255,255,255,.13);
+    box-shadow:0 26px 60px rgba(0,0,0,.62), 0 0 90px rgba(255,210,87,.16), 0 0 0 6px rgba(255,255,255,.035);
+  }
+
+  /* 卖点 */
+  .chips { margin-top:auto; display:flex; flex-wrap:wrap; gap:13px; justify-content:center; }
+  .chip {
+    font-size:22px; color:#ffe9b0; letter-spacing:.4px;
+    background:rgba(255,210,87,.10); border:1px solid rgba(255,210,87,.28);
+    padding:11px 21px; border-radius:999px; font-weight:500;
+  }
+
+  /* 底部 */
+  .foot {
+    margin-top:28px; padding-top:30px;
+    border-top:1px solid rgba(255,255,255,.10);
+    display:flex; align-items:center; gap:34px;
+  }
+  .qrwrap {
+    padding:14px; border-radius:22px; background:#fff;
+    box-shadow:0 14px 40px rgba(0,0,0,.45);
+    line-height:0;
+  }
+  .qrwrap img { width:196px; height:196px; display:block; }
+  .foot .txt { flex:1; }
+  .foot .k { font-size:20px; color:#5f7396; letter-spacing:1.6px; text-transform:uppercase; }
+  .foot .repo {
+    margin-top:10px; font-size:29px; font-weight:700; color:#eef3fb;
+    letter-spacing:.2px; word-break:break-all;
+  }
+  .foot .repo span { color:#ffd257; }
+  .foot .note { margin-top:12px; font-size:20px; color:#9db0cc; letter-spacing:.4px; }
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="inner">
+
+    <div class="brand">
+      <img src="icon.png" alt="">
+      <div>
+        <div class="name">小薪薪</div>
+        <div class="tag"><span class="badge">macOS</span> 悬浮小窗 · 工资计时器</div>
+      </div>
+    </div>
+
+    <h1>让每一秒<br>都看得见价值</h1>
+    <p class="sub">填月薪 · 打卡 · <b>屏幕上的数字开始跳</b></p>
+
+    <div class="shot">
+      <img src="home.png" alt="">
+    </div>
+
+    <div class="chips">
+      <div class="chip">秒级跳动</div>
+      <div class="chip">到点自动下班</div>
+      <div class="chip">加班单独计费</div>
+      <div class="chip">本月累计进账</div>
+    </div>
+
+    <div class="foot">
+      <div class="qrwrap"><img src="qr.png" alt=""></div>
+      <div class="txt">
+        <div class="k">GitHub</div>
+        <div class="repo">terencetian/<span>com.haofan.xiaoxinxin</span></div>
+        <div class="note">开源免费 · macOS 14+ · Apple Silicon</div>
+        <div class="note">扫码到 Releases 下载 .dmg</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>

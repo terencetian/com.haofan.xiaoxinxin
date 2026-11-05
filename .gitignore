@@ -21,3 +21,8 @@ _旧版本/
 *.xcuserstate
 .swiftpm/
 .BC.T_*
+
+# 海报渲染中间件（build.sh 会从 assets/ 与 screenshots/ 重新拉取）
+poster/icon.png
+poster/home.png
+poster/qr.png

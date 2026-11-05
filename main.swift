@@ -70,8 +70,10 @@ let DEV_NAME = "逍狗屁屁"
 let DEV_TAGLINE = "让每一秒都看得见价值"
 // 版本号单一来源 = Info.plist 的 CFBundleShortVersionString / CFBundleVersion（plutil 改一处，界面全跟）
 // 裸二进制（脱离 bundle 跑自检）读不到 Info.plist 时用下面的兜底值
-let APP_VERSION = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.2"
-let APP_BUILD = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "3"
+let APP_VERSION = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "1.2"
+let APP_BUILD = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
+    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "3"
 
 /// 标准「关于」面板：开发者署名 + 版本 + 版权
 @MainActor
@@ -2002,12 +2004,36 @@ panel.isMovableByWindowBackground = true
 panel.hidesOnDeactivate = false
 panel.becomesKeyOnlyIfNeeded = true   // 只在点击文本框等需要键盘的场景成为 key，不抢焦点
 
+// 素材图演示数据：--shot-salary <月薪> [--shot-worked <分钟>]
+// 只影响截图用的独立 defaults 域，正常启动不会走这里
+@MainActor
+func seedShotDemo(_ model: EarnModel, salary: Double, workedMinutes: Double) {
+    model.salaryText = String(Int(salary))
+    model.workDaysText = ""
+    model.workStartText = "09:00"
+    model.workEndText = "18:00"
+    model.breakMinText = "60"
+    // 本月已过完的日子按理论日薪落账，含两天加班，让「本月累计」看起来是真实用过来的
+    let dayPay = salary / 21.0
+    let cal = Calendar.current
+    for i in 1...4 {
+        if let d = cal.date(byAdding: .day, value: -i, to: Date.now) {
+            let ot: Double = (i == 2 || i == 3) ? 2700 : 0
+            model.debugSeedDayLog(key: dateKey(d), earned: dayPay, ot: ot)
+        }
+    }
+    let start = Date.now.addingTimeInterval(-workedMinutes * 60)
+    model.debugStartSession(at: start)
+    model.logText = "⏰ \(timeStr(start)) 打卡上班，继续计费中"
+    model.tick()
+    print("SHOT| 月薪 \(Int(salary)) 今日已工作 \(Int(workedMinutes)) 分 · 今日到账 \(fmt(model.displayEarned)) · 本月累计 \(fmt(model.monthEarned)) · 本月加班 \(Int(model.monthOTSeconds / 60)) 分")
+}
+
 // 自检：--sim-autoout（配合 EarnModel 的独立 defaults 域）
 // 场景：3 小时前打卡、计划下班在 2 分钟前 → 应自动下班；
 // 再次打卡应识别为加班；强制跨天应清零累计且继续计费。
 @MainActor
-func runSimAutoout(_ model: EarnModel) {
-    model.salaryText = "21000"
+func runSimAutoout(_ model: EarnModel) {    model.salaryText = "21000"
     model.workStartText = "09:00"
     model.workEndText = timeStr(Date.now.addingTimeInterval(-120))   // 计划下班 = 2 分钟前
     model.debugStartSession(at: Date.now.addingTimeInterval(-3600 * 3))
@@ -2053,8 +2079,16 @@ MainActor.assumeIsolated {
         exit(0)
     }
 
-    // 导出界面图模式：--export-shots <目录>
+    // 导出界面图模式：--export-shots <目录> [--dark] [--shot-salary <月薪>] [--shot-worked <分钟>]
     if let i = CommandLine.arguments.firstIndex(of: "--export-shots"), i + 1 < CommandLine.arguments.count {
+        func argValue(_ flag: String) -> String? {
+            guard let j = CommandLine.arguments.firstIndex(of: flag), j + 1 < CommandLine.arguments.count else { return nil }
+            return CommandLine.arguments[j + 1]
+        }
+        if let raw = argValue("--shot-salary"), let salary = Double(raw), salary > 0 {
+            seedShotDemo(model, salary: salary,
+                         workedMinutes: Double(argValue("--shot-worked") ?? "152") ?? 152)
+        }
         exportShots(to: CommandLine.arguments[i + 1], model: model,
                     dark: CommandLine.arguments.contains("--dark"))
         exit(0)
