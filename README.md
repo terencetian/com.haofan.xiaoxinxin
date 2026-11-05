@@ -1,6 +1,8 @@
 # 小薪薪 · 让每一秒都看得见价值
 
 > 🌐 **在线介绍页**：https://terencetian.github.io/com.haofan.xiaoxinxin/
+>
+> 📱 **手机版（Android 尝鲜版）**：https://github.com/terencetian/xiaoxinxin-android
 
 一枚常驻 macOS 桌面的 **Liquid Glass 悬浮工资计时器**。打卡上班后，实时滚动显示今日已到账金额，金币压在进度条前端一路向前——把月薪拆到每一秒，看着钱一格格进账。
 
