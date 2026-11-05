@@ -11,6 +11,7 @@ struct Snap {
     var ratePerDay: Double = 0
     var workedBeforeSession: Double = 0
     var salary: Double = 0
+    var debugTag: String = ""   // 诊断用：本次读到哪条通道 / 时间戳
 
     // 在给定时刻推算的实时值（时间线每个 entry 各自算，分钟级跳动不用主 App 参与）
     func earned(at date: Date) -> Double {
@@ -40,25 +41,123 @@ struct Snap {
     }()
 
     static func load() -> Snap {
-        // 双通道：扩展容器内的副本 + 真实家目录（临时豁免）。
-        // 容器目录被系统容器保护，主 App 实际写不进去，副本可能长期陈旧，
-        // 所以按 savedAt 取最新的一份，而不是见到哪份用哪份。
-        let candidates = [
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/小薪薪/widget-snapshot.json"),
-            realHome.appendingPathComponent("Library/Application Support/小薪薪/widget-snapshot.json"),
-        ]
-        var best: (snap: Snap, stamp: Double)?
-        for url in candidates {
-            guard let hit = decode(at: url) else { continue }
-            if best == nil || hit.stamp > best!.stamp { best = hit }
+        // 通道优先级：ASCII 家目录 → 中文家目录 → 主 App 偏好域 → 自己容器缓存 → 容器旧副本。
+        // 沙盒的 home-relative 临时豁免在 ad-hoc 签名下不一定生效，所以多路兜底并保留诊断标记。
+        let asciiURL = realHome.appendingPathComponent("Library/Application Support/Xiaoxinxin/widget-snapshot.json")
+        let realURL = realHome.appendingPathComponent("Library/Application Support/小薪薪/widget-snapshot.json")
+        let containerURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/小薪薪/widget-snapshot.json")
+
+        var miss = ""
+        if let hit = fromBridge() {
+            cacheRaw(hit)
+            return tagged(hit.snap, "HT " + hm(hit.stamp))
         }
-        return best?.snap ?? Snap()
+        miss += "h"
+        if let hit = decode(at: asciiURL) {
+            cacheRaw(hit)
+            return tagged(hit.snap, "RA " + hm(hit.stamp) + " " + miss)
+        }
+        miss += "a"
+        if let hit = decode(at: realURL) {
+            cacheRaw(hit)
+            return tagged(hit.snap, "RH " + hm(hit.stamp) + " " + miss)
+        }
+        miss += "j"
+        if let (snap, stamp) = fromAppPrefs() {
+            return tagged(snap, "PR " + hm(stamp) + " " + miss)
+        }
+        miss += "p"
+        if let cached = cachedRaw(), let hit = decode(data: cached.data, fallbackStamp: cached.stamp) {
+            return tagged(hit.snap, "CA " + hm(hit.stamp) + " " + miss)
+        }
+        miss += "c"
+        if let hit = decode(at: containerURL) {
+            return tagged(hit.snap, "CT " + hm(hit.stamp) + " " + miss)
+        }
+        return tagged(Snap(), "NONE " + miss)
     }
 
-    private static func decode(at url: URL) -> (snap: Snap, stamp: Double)? {
-        guard let data = try? Data(contentsOf: url),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+    /// 本机回环数据桥：主 App 在 127.0.0.1:47821 上提供快照（outbound 网络是标准沙盒能力）
+    static let bridgeURL = URL(string: "http://127.0.0.1:47821/state")!
+
+    private static func fromBridge() -> (snap: Snap, stamp: Double, raw: Data)? {
+        var req = URLRequest(url: bridgeURL)
+        req.timeoutInterval = 2
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let sem = DispatchSemaphore(value: 0)
+        var out: Data?
+        URLSession.shared.dataTask(with: req) { d, _, _ in out = d; sem.signal() }.resume()
+        guard sem.wait(timeout: .now() + 2.5) == .success, let d = out else { return nil }
+        return decode(data: d, fallbackStamp: 0)
+    }
+
+    private static func tagged(_ s: Snap, _ tag: String) -> Snap {
+        var c = s
+        c.debugTag = tag
+        return c
+    }
+
+    /// 主 App 自己的偏好域：沙盒允许读其他 App 的偏好，这条通道不依赖文件豁免
+    private static func fromAppPrefs() -> (Snap, Double)? {
+        guard let d = UserDefaults(suiteName: "com.haofan.xiaoxinxin"),
+              let ts = d.object(forKey: "wSavedAt") as? Double, ts > 0 else { return nil }
+        var s = Snap()
+        s.baseEarned = d.double(forKey: "wBaseEarned")
+        let ci = d.double(forKey: "wClockInAt")
+        s.clockInAt = ci > 0 ? Date(timeIntervalSince1970: ci) : nil
+        s.working = d.bool(forKey: "wWorking")
+        s.ratePerSec = d.double(forKey: "wRatePerSec")
+        s.ratePerDay = d.double(forKey: "wRatePerDay")
+        s.workedBeforeSession = d.double(forKey: "wWorkedBefore")
+        s.salary = d.double(forKey: "wSalary")
+        let alive = (d.object(forKey: "wAlive") as? Bool) ?? true
+        applyFreeze(&s, alive: alive, stamp: ts)
+        return (s, ts)
+    }
+
+    // MARK: 扩展自己容器里的「上次成功快照」
+    private static let cacheKey = "lastGoodSnapshot"
+
+    private static func cacheRaw(_ hit: (snap: Snap, stamp: Double, raw: Data)) {
+        UserDefaults.standard.set(hit.raw, forKey: cacheKey)
+    }
+    private static func cachedRaw() -> (data: Data, stamp: Double)? {
+        guard let d = UserDefaults.standard.data(forKey: cacheKey) else { return nil }
+        return (d, 0)
+    }
+
+    static func hm(_ ts: Double) -> String {
+        guard ts > 0 else { return "0" }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: Date(timeIntervalSince1970: ts))
+    }
+
+    private static func log(_ msg: String) {
+        NSLog("[SalaryWidget] %@", msg)
+    }
+
+    /// 停表规则：主 App 明确退出（alive=false），或 3 分钟没心跳（崩溃/休眠），
+    /// 就把当前值烘焙进 baseEarned 再停表，避免时间线按旧 clockInAt 无限累加
+    private static func applyFreeze(_ s: inout Snap, alive: Bool, stamp: Double) {
+        let stale = stamp > 0 && Date.now.timeIntervalSince1970 - stamp > 180
+        guard s.working, !alive || stale, let start = s.clockInAt else { return }
+        let extra = max(0, min(stamp, Date.now.timeIntervalSince1970) - start.timeIntervalSince1970)
+        s.baseEarned += extra * s.ratePerSec
+        s.workedBeforeSession += extra
+        s.working = false
+        s.clockInAt = nil
+    }
+
+    private static func decode(at url: URL) -> (snap: Snap, stamp: Double, raw: Data)? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let mtime = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date)?.timeIntervalSince1970
+        return decode(data: data, fallbackStamp: mtime ?? 0)
+    }
+
+    private static func decode(data: Data, fallbackStamp: Double) -> (snap: Snap, stamp: Double, raw: Data)? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         var s = Snap()
         s.baseEarned = obj["baseEarned"] as? Double ?? 0
         s.clockInAt = (obj["clockInAt"] as? Double).flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil }
@@ -67,11 +166,10 @@ struct Snap {
         s.ratePerDay = obj["ratePerDay"] as? Double ?? 0
         s.workedBeforeSession = obj["workedBeforeSession"] as? Double ?? 0
         s.salary = obj["salary"] as? Double ?? 0
-        // savedAt 缺失时退化用文件修改时间，避免两份都算"最新"
-        let stamp = (obj["savedAt"] as? Double)
-            ?? ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date)?.timeIntervalSince1970
-            ?? 0
-        return (s, stamp)
+        let stamp = (obj["savedAt"] as? Double) ?? fallbackStamp
+        let alive = (obj["alive"] as? Bool) ?? true
+        applyFreeze(&s, alive: alive, stamp: stamp)
+        return (s, stamp, data)
     }
 }
 
@@ -94,13 +192,14 @@ struct SalaryProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<SalaryEntry>) -> Void) {
         let snap = Snap.load()
         var entries: [SalaryEntry] = [SalaryEntry(date: .now, snap: snap)]
-        // 计费中：未来 15 分钟每 5 秒一个 entry，金额/进度秒级跳动
-        // （小组件里 TimelineView 的 periodic 调度会被系统忽略，只能靠预生成 entry）
+        // 计费中：未来 20 分钟每秒一个 entry —— 金额/进度环看起来是实时走数的。
+        // 小组件里 TimelineView 的 periodic 调度会被系统忽略，唯一可行的办法就是预生成 entry；
+        // entry 只是 (date, snap)，预计算开销可忽略。
         if snap.working {
-            for s in 1...(15 * 60 / 5) {
-                entries.append(SalaryEntry(date: .now.addingTimeInterval(Double(s) * 5), snap: snap))
+            for s in 1...(10 * 60) {
+                entries.append(SalaryEntry(date: .now.addingTimeInterval(Double(s)), snap: snap))
             }
-            completion(Timeline(entries: entries, policy: .after(.now.addingTimeInterval(14 * 60))))
+            completion(Timeline(entries: entries, policy: .after(.now.addingTimeInterval(9 * 60))))
         } else {
             completion(Timeline(entries: entries, policy: .after(.now.addingTimeInterval(30 * 60))))
         }
@@ -193,8 +292,9 @@ struct SalarySmallView: View {
                     Text("今日").font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
                 }
             }
-            Text(String(format: "进度 %.1f%%", p * 100))
-                .font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+            Text(String(format: "进度 %.1f%%", p * 100) + " · " + entry.snap.debugTag)
+                .font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+                .lineLimit(1).minimumScaleFactor(0.6)
         }
         .padding(2)
     }

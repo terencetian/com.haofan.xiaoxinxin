@@ -40,6 +40,16 @@ func dateKey(_ d: Date) -> String {
     return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
 }
 
+// 严格校验 yyyy-MM-dd（格式 + 真实日历有效性，拒绝 2026-02-30 这类）
+func isValidDayKey(_ s: String) -> Bool {
+    guard s.count == 10 else { return false }
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    f.isLenient = false
+    guard let d = f.date(from: s) else { return false }
+    return f.string(from: d) == s
+}
+
 let HOLIDAYS: Set<String> = {
     var s = Set<String>()
     let f = DateFormatter()
@@ -87,6 +97,25 @@ func fmt(_ n: Double, _ dec: Int = 2) -> String {
 func timeStr(_ d: Date) -> String {
     let c = Calendar.current.dateComponents([.hour, .minute], from: d)
     return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
+}
+
+// 当前班次的计划下班时刻。
+// 同日班（start < end）→ 当天 end 时刻；跨零点班（start >= end）→ now 已过当天 start 则为次日 end，否则为当天 end。
+// 时间文本非法返回 nil。
+func shiftEndTime(now: Date, startStr: String, endStr: String) -> Date? {
+    func comps(_ s: String) -> (Int, Int)? {
+        let p = s.trimmingCharacters(in: .whitespaces).split(separator: ":")
+        guard p.count == 2, let h = Int(p[0]), let m = Int(p[1]),
+              h >= 0, h < 24, m >= 0, m < 60 else { return nil }
+        return (h, m)
+    }
+    guard let (eh, em) = comps(endStr), let (sh, sm) = comps(startStr) else { return nil }
+    let cal = Calendar.current
+    guard let endToday = cal.date(bySettingHour: eh, minute: em, second: 0, of: now),
+          let startToday = cal.date(bySettingHour: sh, minute: sm, second: 0, of: now) else { return nil }
+    let crossMidnight = (eh * 60 + em) <= (sh * 60 + sm)
+    if !crossMidnight { return endToday }
+    return now >= startToday ? cal.date(byAdding: .day, value: 1, to: endToday) : endToday
 }
 
 // MARK: - 主色提取（图标吸色）

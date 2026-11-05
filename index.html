@@ -72,6 +72,11 @@
   .btn-ghost:hover{border-color:rgba(255,210,87,.5);color:var(--gold-1)}
   .hero .meta{margin-top:22px;font-size:13px;color:var(--ink-faint)}
   .hero .meta b{color:var(--ink-dim);font-weight:600}
+  .hero .whatsnew{margin-top:14px;display:inline-block;font-size:12.5px;line-height:1.9;
+    color:var(--ink-dim);background:rgba(255,255,255,.05);border:1px solid var(--line);
+    border-radius:999px;padding:6px 16px;max-width:100%}
+  .hero .whatsnew b{color:var(--gold-1);font-weight:700;margin-right:4px}
+  @media (max-width:640px){.hero .whatsnew{border-radius:16px;font-size:12px;padding:8px 14px}}
 
   /* live demo ticker */
   .demo{margin:64px auto 0;max-width:560px;border-radius:22px;padding:26px 30px;
@@ -138,7 +143,7 @@
 
 <nav>
   <div class="wrap nav-in">
-    <a class="brand" href="#"><img src="assets/AppIcon-1024.png" alt="小薪薪图标">小薪薪<span class="v">v1.3</span></a>
+    <a class="brand" href="#"><img src="assets/AppIcon-1024.png" alt="小薪薪图标">小薪薪<span class="v">v1.9.2</span></a>
     <div class="nav-links">
       <a href="#features">功能</a>
       <a href="#shots">界面</a>
@@ -158,6 +163,7 @@
     <a class="btn btn-ghost" href="https://github.com/terencetian/com.haofan.xiaoxinxin">查看源码</a>
   </div>
   <p class="meta">macOS 13+ · <b>完全离线</b> · 无统计 · 无上传 · ad-hoc 签名免费分发</p>
+  <p class="whatsnew"><b>v1.9.2 更新</b>　到点自动下班 · 加班计费 · 隔天自动重置 · 本月累计统计 · 流水明细查询 · 设置分区折叠</p>
 
   <div class="demo" aria-hidden="true">
     <div class="label">正在进账 · 今日已到账</div>
@@ -173,14 +179,20 @@
     <p class="sec-sub">不止是计时器，是一整套「时间值多少钱」的可视化</p>
     <div class="grid">
       <div class="card"><span class="em">🕐</span><h3>打卡计时</h3><p>上班打卡后按秒累计今日到账，下班打卡停止并结算。</p></div>
+      <div class="card"><span class="em">⏰</span><h3>到点自动下班</h3><p>到了计划下班时间自动打卡下班，忘了点也不会多算钱；不想要可在设置里关掉。</p></div>
+      <div class="card"><span class="em">🌙</span><h3>加班计费</h3><p>下班后或过点再打卡自动识别为加班，首页亮起「加班中」，加班时长单独累计。</p></div>
+      <div class="card"><span class="em">🌅</span><h3>隔天自动重置</h3><p>跨天自动清零今日到账与加班；如果当时还在计费，从零点重新起算新的一天。</p></div>
+      <div class="card"><span class="em">📈</span><h3>月度统计</h3><p>首页直接看本月累计进账与本月加班时长，按天流水汇总，月初自动归零。</p></div>
+      <div class="card"><span class="em">📋</span><h3>流水明细</h3><p>设置页按日期范围查询每天的到账与加班，忘了打卡可手动补记，记错可删除。</p></div>
       <div class="card"><span class="em">💰</span><h3>金币进度条</h3><p>进度 = 今日已赚 ÷ 日薪，金币压在进度条前端一路向前。</p></div>
-      <div class="card"><span class="em">🎨</span><h3>图标吸色</h3><p>自动提取进度条图标的主色，染遍进度条与窗口背景。</p></div>
+      <div class="card"><span class="em">🎨</span><h3>图标吸色</h3><p>自动提取进度条图标的主色，染遍进度条与窗口背景；图标可在设置页换成自己喜欢的图。</p></div>
       <div class="card"><span class="em">📅</span><h3>工作日自动计算</h3><p>按 2026 国办法定节假日算出当月工作日，含调休补班。</p></div>
       <div class="card"><span class="em">⏱️</span><h3>工时自定义</h3><p>自定义上下班时间与休息时长，支持跨零点排班，还可填校正工时补记或核减。</p></div>
-      <div class="card"><span class="em">▫️</span><h3>迷你模式</h3><p>收起成一条小胶囊：图标 + 进度条 + 金额，不挡桌面。</p></div>
+      <div class="card"><span class="em">🗂️</span><h3>设置分区折叠</h3><p>薪酬、工时、校正、外观、窗口、流水六大功能区，点标题展开，窗口跟着变高变矮。</p></div>
+      <div class="card"><span class="em">▫️</span><h3>迷你模式</h3><p>收起成一条小胶囊：图标 + 进度条 + 金额，一键展回大窗。</p></div>
       <div class="card"><span class="em">💵</span><h3>状态栏常驻</h3><p>菜单栏图标常驻，可显示实时金额与进度，右键出完整菜单。</p></div>
       <div class="card"><span class="em">📌</span><h3>贴边收纳</h3><p>小窗拖到屏幕边缘停住，自动收纳进状态栏，随取随用。</p></div>
-      <div class="card"><span class="em">🎨</span><h3>自定义图标</h3><p>设置页里换上自己喜欢的进度条图标，吸色跟着变。</p></div>
+      <div class="card"><span class="em">🌗</span><h3>深色模式</h3><p>跟随系统在浅色与深色之间自动切换，玻璃质感与文字对比度都做过适配。</p></div>
       <div class="card"><span class="em">🧩</span><h3>桌面小组件</h3><p>内置 WidgetKit 扩展，工资进度直接上桌面。</p></div>
     </div>
   </div>
@@ -189,19 +201,19 @@
 <section id="shots" style="background:rgba(255,255,255,.02);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="wrap">
     <h2 class="sec-title">界面预览</h2>
-    <p class="sec-sub">Liquid Glass 玻璃质感 · macOS 26+ 自动启用原生材质</p>
+    <p class="sec-sub">Liquid Glass 玻璃质感 · 深浅色自动跟随 · macOS 26+ 自动启用原生材质</p>
     <div class="shots">
       <div class="shot">
         <img src="screenshots/home.png" alt="小薪薪主界面：今日已到账金额与金币进度条" loading="lazy">
-        <div class="cap">主界面 · 实时到账 + 六宫格数据 + 打卡</div>
+        <div class="cap">主界面 · 实时到账 + 月度统计 + 打卡</div>
       </div>
       <div class="shot">
         <img src="screenshots/settings.png" alt="小薪薪设置页" loading="lazy">
-        <div class="cap">设置页 · 月薪 / 工作日 / 工时 / 图标 / 关闭行为</div>
+        <div class="cap">设置页 · 六大功能区自由折叠 / 流水明细查询</div>
       </div>
       <div class="shot span2">
         <img src="screenshots/mini.png" alt="小薪薪迷你模式胶囊" loading="lazy">
-        <div class="cap">迷你模式 · 收起成一条小胶囊</div>
+        <div class="cap">迷你模式 · 收起成一条小胶囊，一键展回</div>
       </div>
     </div>
   </div>
@@ -226,7 +238,7 @@
     <div class="install">
       <div class="step"><span class="n">1</span>
         <h3>下载安装包</h3>
-        <p>到 <a href="https://github.com/terencetian/com.haofan.xiaoxinxin/releases/latest" style="color:var(--gold-1)">Releases</a> 下载 <code>xiaoxinxin-v1.3.dmg</code>，打开后把「小薪薪」拖进「应用程序」。</p>
+        <p>到 <a href="https://github.com/terencetian/com.haofan.xiaoxinxin/releases/latest" style="color:var(--gold-1)">Releases</a> 下载 <code>xiaoxinxin-v1.9.2.dmg</code>，打开后把「小薪薪」拖进「应用程序」。</p>
       </div>
       <div class="step"><span class="n">2</span>
         <h3>首次打开放行</h3>
@@ -243,7 +255,7 @@
 <footer>
   <div class="wrap">
     <p><a href="https://github.com/terencetian/com.haofan.xiaoxinxin">GitHub 仓库</a> · <a href="https://github.com/terencetian/com.haofan.xiaoxinxin/releases">版本发布</a> · <a href="https://github.com/terencetian/com.haofan.xiaoxinxin/blob/main/小薪薪产品手册.md">产品手册</a></p>
-    <p class="fine">© 2026 逍狗屁屁 · 小薪薪 v1.3 · 让每一秒都看得见价值</p>
+    <p class="fine">© 2026 逍狗屁屁 · 小薪薪 v1.9.2 · 让每一秒都看得见价值</p>
   </div>
 </footer>
 

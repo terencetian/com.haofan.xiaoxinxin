@@ -8,8 +8,55 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 import WidgetKit
+import Network
+
+// MARK: - 小组件数据桥（本机回环 HTTP）
+// 沙盒扩展既读不到真实家目录、也读不到别的 App 的偏好（ad-hoc 签名下临时豁免不生效），
+// 但 outbound 网络是标准沙盒能力 —— 所以在 127.0.0.1 起一个极简 HTTP 服务把快照喂给扩展。
+// 只绑回环地址，不暴露到局域网。
+final class WidgetBridge {
+    static let shared = WidgetBridge()
+    static let port: UInt16 = 47821
+    private var listener: NWListener?
+    private var payload = Data("{}".utf8)
+
+    func update(_ data: Data) { payload = data }
+
+    func start() {
+        guard listener == nil else { return }
+        let params = NWParameters.tcp
+        params.allowLocalEndpointReuse = true
+        params.requiredLocalEndpoint = NWEndpoint.hostPort(
+            host: "127.0.0.1", port: NWEndpoint.Port(rawValue: Self.port)!)
+        guard let l = try? NWListener(using: params) else { return }
+        l.newConnectionHandler = { [weak self] conn in
+            conn.start(queue: .global(qos: .utility))
+            self?.serve(conn)
+        }
+        l.start(queue: .global(qos: .utility))
+        listener = l
+    }
+
+    private func serve(_ conn: NWConnection) {
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 2048) { [weak self] _, _, _, _ in
+            guard let self else { conn.cancel(); return }
+            let body = self.payload
+            var out = Data("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
+            out.append(body)
+            conn.send(content: out, completion: .contentProcessed { _ in conn.cancel() })
+        }
+    }
+}
 
 struct Gain: Identifiable { let id = UUID(); let xOffset: CGFloat }
+
+// 流水明细行（设置页查询结果）
+struct DayLogRow: Identifiable {
+    let key: String       // yyyy-MM-dd
+    let earned: Double
+    let otSeconds: Double
+    var id: String { key }
+}
 
 // 处理 xiaoxinxin:// URL（小组件点击唤起主窗口）
 final class URLOpener: NSObject {
@@ -74,6 +121,12 @@ final class EarnModel: ObservableObject {
     @Published var statusBarMode = false     // 缩小至状态栏：状态栏图标直接显示金额+进度
     @Published var closeBehavior: String     // 点击关闭按钮时："hide"=收纳到状态栏，"quit"=直接退出
     @Published var barSymbol: String         // 状态栏金额前缀符号/emoji，可自定义（空=只显示数字）
+    @Published var autoOutEnabled: Bool      // 到点自动下班：到计划下班时刻自动打卡下班
+    @Published var overtimeSeconds: Double = 0   // 今日加班累计秒数（自动下班后/过了下班时间再打卡的时段）
+    @Published var dayLogRevision = 0        // 流水增删计数：驱动本月累计芯片刷新
+
+    private var dayKey = ""                  // 当前计费日 yyyy-MM-dd，用于跨天自动重置
+    private var dayLog: [String: [String: Double]] = [:]   // 历史流水：dateKey -> ["earned": 当日到账, "ot": 当日加班秒]
 
     var onResize: (() -> Void)?
     var onHidePanel: (() -> Void)?           // 关闭收纳：由入口注入隐藏面板的实现
@@ -83,13 +136,24 @@ final class EarnModel: ObservableObject {
     private var lastGainMark: Double = 0
     private var workedBeforeSession: Double = 0   // 今日此前已完成计费段的累计秒数
     private var timer: Timer?
-    private let ud = UserDefaults.standard
+    private let ud: UserDefaults
     private var tickCount = 0
+    private var snapTimer: DispatchSourceTimer?   // 快照心跳：不依赖界面存活
+    private var snapBeat = 0
+    private var napToken: NSObjectProtocol?
 
     // WidgetKit 数据快照：主 App（未沙盒）写出，小组件扩展（沙盒）经临时豁免授权读取
     static let widgetSnapURL: URL = {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/小薪薪", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("widget-snapshot.json")
+    }()
+
+    // 沙盒豁免对含中文的路径匹配不可靠，额外写一份纯 ASCII 路径，扩展优先读它
+    static let widgetSnapURLAscii: URL = {
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Xiaoxinxin", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("widget-snapshot.json")
     }()
@@ -107,7 +171,7 @@ final class EarnModel: ObservableObject {
         return dir.appendingPathComponent("widget-snapshot.json")
     }
 
-    func writeWidgetSnapshot(reload: Bool = false) {
+    func writeWidgetSnapshot(reload: Bool = false, alive: Bool = true) {
         let dict: [String: Any] = [
             "baseEarned": baseEarned,
             "clockInAt": clockInAt?.timeIntervalSince1970 ?? 0,
@@ -117,11 +181,25 @@ final class EarnModel: ObservableObject {
             "workedBeforeSession": workedBeforeSession,
             "salary": salary,
             "savedAt": Date.now.timeIntervalSince1970,
+            "alive": alive,   // 主 App 是否还活着：false 表示已退出，小组件据此停表
         ]
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted]) {
+            WidgetBridge.shared.update(data)
             try? data.write(to: Self.widgetSnapURL, options: .atomic)
+            try? data.write(to: Self.widgetSnapURLAscii, options: .atomic)
             if let c = Self.widgetContainerSnapURL { try? data.write(to: c, options: .atomic) }
         }
+        // 偏好域镜像：沙盒扩展读文件可能被拦，读别的 App 的偏好则通常允许，作为独立通道
+        ud.set(baseEarned, forKey: "wBaseEarned")
+        ud.set(clockInAt?.timeIntervalSince1970 ?? 0, forKey: "wClockInAt")
+        ud.set(working, forKey: "wWorking")
+        ud.set(ratePerSec, forKey: "wRatePerSec")
+        ud.set(ratePerDay, forKey: "wRatePerDay")
+        ud.set(workedBeforeSession, forKey: "wWorkedBefore")
+        ud.set(salary, forKey: "wSalary")
+        ud.set(Date.now.timeIntervalSince1970, forKey: "wSavedAt")
+        ud.set(alive, forKey: "wAlive")
+        ud.synchronize()
         if reload {
             WidgetCenter.shared.reloadAllTimelines()
         }
@@ -147,7 +225,36 @@ final class EarnModel: ObservableObject {
     var workedMinutes: Int { Int(workedSeconds / 60) }
     var totalWorkedHours: Double { workedSeconds / 3600 }
 
-    init() {
+    // 当前班次的计划下班时刻（跨零点班次自动落到次日）
+    var scheduledEnd: Date? {
+        shiftEndTime(now: Date.now, startStr: workStartText, endStr: workEndText)
+    }
+    // 加班中：当前计费段是在计划下班之后打卡的
+    var overtimeNow: Bool {
+        guard working, let s = clockInAt, let end = scheduledEnd else { return false }
+        return s >= end
+    }
+    var overtimeMinutes: Int { Int(overtimeSeconds / 60) }
+
+    // 本月累计进账 = 今日实时 + 历史流水（日切时落账）
+    var monthEarned: Double {
+        _ = dayLogRevision   // 供 SwiftUI 感知流水增删
+        let today = dateKey(Date.now)
+        var sum = displayEarned
+        for (k, v) in dayLog where k.hasPrefix(today.prefix(7)) && k != today { sum += v["earned"] ?? 0 }
+        return sum
+    }
+    // 本月累计加班秒数 = 今日加班 + 历史流水
+    var monthOTSeconds: Double {
+        _ = dayLogRevision
+        let today = dateKey(Date.now)
+        var sum = overtimeSeconds
+        for (k, v) in dayLog where k.hasPrefix(today.prefix(7)) && k != today { sum += v["ot"] ?? 0 }
+        return sum
+    }
+
+    init(ud: UserDefaults = .standard) {
+        self.ud = ud
         salaryText = ud.string(forKey: "salary") ?? ""
         workDaysText = ud.string(forKey: "workDaysText") ?? ""
         workStartText = ud.string(forKey: "workStart") ?? "09:00"
@@ -166,13 +273,53 @@ final class EarnModel: ObservableObject {
             workedBeforeSession = ud.double(forKey: "workedSeconds")   // 旧字段迁移
         }
         if let saved = ud.object(forKey: "clockInAt") as? Date { clockInAt = saved }
+        autoOutEnabled = ud.object(forKey: "autoOut") == nil ? true : ud.bool(forKey: "autoOut")
+        overtimeSeconds = ud.double(forKey: "overtimeSeconds")
+        if let raw = ud.dictionary(forKey: "dayLog") as? [String: [String: NSNumber]] {
+            dayLog = raw.mapValues { ["earned": $0["earned"]?.doubleValue ?? 0, "ot": $0["ot"]?.doubleValue ?? 0] }
+        }
+        dayKey = ud.string(forKey: "dayKey") ?? ""
+        // 跨天重置：上次使用不是今天 → 清零昨日累计；若打卡计费中则从现在重新起算新的一天
+        let today = dateKey(Date.now)
+        if dayKey != today && (baseEarned > 0 || workedBeforeSession > 0 || working) {
+            flushDayLog(dayKey)              // 昨日账目落流水，供本月累计
+            baseEarned = 0
+            workedBeforeSession = 0
+            overtimeSeconds = 0
+            displayEarned = 0
+            lastGainMark = 0
+            if working { clockInAt = Date.now }
+        }
+        dayKey = today
         if working && clockInAt != nil {
             logText = "⏰ \(timeStr(clockInAt!)) 打卡上班，继续计费中"
         }
         loadIcon()
-        writeWidgetSnapshot()   // 启动即落快照，小组件第一次刷新就有数据
+        WidgetBridge.shared.start()          // 本机回环数据桥：沙盒扩展唯一稳定的取数通道
+        writeWidgetSnapshot(reload: true)   // 启动即落快照并叫醒小组件
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.tick() }
+        }
+
+        // 快照心跳必须独立于界面：窗口收起 / 切到后台时，界面计时器可能被系统降频甚至挂起，
+        // 小组件就会读到过期快照。这里用独立 GCD 定时器 + 阻止 App Nap。
+        napToken = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .suddenTerminationDisabled, .automaticTerminationDisabled],
+            reason: "保持打卡计时与小组件快照准确")
+        let beat = DispatchSource.makeTimerSource(queue: .main)
+        beat.schedule(deadline: .now() + 15, repeating: 15, leeway: .seconds(2))
+        beat.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.snapBeat += 1
+            self.writeWidgetSnapshot(reload: self.snapBeat % 20 == 0)   // 每 5 分钟强刷一次时间线
+        }
+        beat.resume()
+        snapTimer = beat
+
+        // 退出前写一份 alive=false，让小组件立刻停表，而不是按旧 clockInAt 继续虚增
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification,
+                                               object: nil, queue: .main) { [weak self] _ in
+            self?.writeWidgetSnapshot(reload: true, alive: false)
         }
     }
 
@@ -195,6 +342,8 @@ final class EarnModel: ObservableObject {
     }
 
     func tick() {
+        checkDayRollover()
+        autoClockOutIfNeeded()
         guard working, let start = clockInAt else { return }
         displayEarned = baseEarned + Date.now.timeIntervalSince(start) * ratePerSec
         if displayEarned - lastGainMark >= 0.01 {
@@ -203,6 +352,9 @@ final class EarnModel: ObservableObject {
         }
         tickCount += 1
         if tickCount % 900 == 0 { writeWidgetSnapshot() }   // 30fps 计时 → 约每 30 秒落一次快照
+        // 每 5 分钟强制刷新一次小组件时间线：小组件自身只有 10 分钟的预生成 entry，
+        // 靠这条心跳兜住 chronod 不按期 reload 的情况
+        if tickCount % 9000 == 0 { writeWidgetSnapshot(reload: true) }
     }
 
     private func spawnGain() {
@@ -218,20 +370,118 @@ final class EarnModel: ObservableObject {
         clockInAt = Date.now
         lastGainMark = baseEarned
         working = true
-        logText = "⏰ \(timeStr(clockInAt!)) 打卡上班，金币开始滚动"
+        if overtimeNow {
+            logText = "🌙 \(timeStr(clockInAt!)) 加班打卡，已过下班时间，按原费率继续计费"
+        } else {
+            logText = "⏰ \(timeStr(clockInAt!)) 打卡上班，金币开始滚动"
+        }
         persist()
     }
 
-    func clockOut() {
+    func clockOut(auto: Bool = false) {
         guard working, let start = clockInAt else { return }
         let elapsed = max(0, Date.now.timeIntervalSince(start))
         baseEarned += elapsed * ratePerSec
         workedBeforeSession += elapsed
+        // 本段开始于计划下班之后 → 计入加班时长
+        if let end = scheduledEnd, start >= end { overtimeSeconds += elapsed }
         displayEarned = baseEarned
         working = false
         clockInAt = nil
-        logText = "🏁 \(timeStr(Date.now)) 下班打卡，今日共到账 ¥\(fmt(baseEarned))"
+        if auto {
+            logText = "🏁 \(timeStr(Date.now)) 已到下班时间，自动打卡下班，今日共到账 ¥\(fmt(baseEarned))"
+        } else {
+            logText = "🏁 \(timeStr(Date.now)) 下班打卡，今日共到账 ¥\(fmt(baseEarned))"
+                + (overtimeMinutes > 0 ? "（含加班 \(overtimeMinutes) 分钟）" : "")
+        }
         persist()
+    }
+
+    // 昨日账目落流水；只保留最近两个月，防止无限增长
+    private func flushDayLog(_ key: String) {
+        guard baseEarned > 0 || overtimeSeconds > 0 else { return }
+        dayLog[key] = ["earned": baseEarned, "ot": overtimeSeconds]
+        let nowPrefix = String(dateKey(Date.now).prefix(7))
+        let prevPrefix = String(dateKey(Calendar.current.date(byAdding: .month, value: -1, to: Date.now)!).prefix(7))
+        dayLog = dayLog.filter { $0.key.hasPrefix(nowPrefix) || $0.key.hasPrefix(prevPrefix) }
+        dayLogRevision += 1
+    }
+
+    // —— 流水明细：设置页查询 / 删除 / 手动添加 ——
+
+    var dayLogTotal: Int {
+        _ = dayLogRevision
+        return dayLog.count
+    }
+
+    // 按日期闭区间查询（yyyy-MM-dd 字符串序即日期序；空串=不限制），降序返回；今日实时数据不在流水
+    func dayLogRows(start: String, end: String) -> [DayLogRow] {
+        _ = dayLogRevision
+        return dayLog
+            .filter { (start.isEmpty || $0.key >= start) && (end.isEmpty || $0.key <= end) }
+            .filter { $0.key != dateKey(Date.now) }
+            .sorted { $0.key > $1.key }
+            .map { DayLogRow(key: $0.key, earned: $0.value["earned"] ?? 0, otSeconds: $0.value["ot"] ?? 0) }
+    }
+
+    @discardableResult
+    func removeDayLog(_ key: String) -> Bool {
+        guard dayLog.removeValue(forKey: key) != nil else { return false }
+        dayLogRevision += 1
+        persist()
+        return true
+    }
+
+    // 手动新增/覆盖某天流水；返回 nil=成功，否则为错误提示
+    func insertDayLog(key: String, earned: Double, otMinutes: Double) -> String? {
+        guard isValidDayKey(key) else { return "日期格式应为 yyyy-MM-dd" }
+        if key == dateKey(Date.now) { return "今日金额以实时打卡为准，请选其他日期" }
+        guard earned >= 0, earned < 1_000_000 else { return "进账金额需在 0–999999 之间" }
+        guard otMinutes >= 0, otMinutes < 1440 else { return "加班分钟需在 0–1439 之间" }
+        dayLog[key] = ["earned": earned, "ot": otMinutes * 60]
+        dayLogRevision += 1
+        persist()
+        return nil
+    }
+
+    // 跨天自动重置：日期变化时清零今日累计与加班；仍在计费则从当前时刻重新起算新的一天
+    private func checkDayRollover() {
+        let today = dateKey(Date.now)
+        guard today != dayKey else { return }
+        let wasWorking = working
+        flushDayLog(dayKey)                  // 昨日账目落流水，供本月累计
+        baseEarned = 0
+        workedBeforeSession = 0
+        overtimeSeconds = 0
+        dayKey = today
+        displayEarned = 0
+        lastGainMark = 0
+        if wasWorking { clockInAt = Date.now }
+        logText = wasWorking ? "🌅 跨入新的一天，今日累计已重置，继续计费"
+                             : "🌅 新的一天，今日累计已重置"
+        persist()
+    }
+
+    // 到点自动下班：本段计费开始于计划下班之前、现在已过下班时刻 → 自动打卡下班
+    private func autoClockOutIfNeeded() {
+        guard autoOutEnabled, working, let s = clockInAt, let end = scheduledEnd else { return }
+        if s < end && Date.now >= end { clockOut(auto: true) }
+    }
+
+    // —— 以下仅供 --sim-autoout 自检使用，不影响正常功能 ——
+    func debugStartSession(at date: Date) {
+        clockInAt = date
+        working = true
+        lastGainMark = baseEarned
+    }
+
+    func debugSimulateNewDay() {
+        dayKey = "2000-01-01"
+        checkDayRollover()
+    }
+
+    func debugSeedDayLog(key: String, earned: Double, ot: Double) {
+        dayLog[key] = ["earned": earned, "ot": ot]
     }
 
     func onSalaryChanged() {
@@ -295,6 +545,17 @@ final class EarnModel: ObservableObject {
         }
     }
 
+    // 收缩至状态栏：始终收纳（不受「关闭=退出」设置影响），窗口隐藏、菜单栏继续走数
+    func collapseToStatusBar() {
+        statusBarMode = true
+        onHidePanel?()
+    }
+
+    // 大小窗口切换（完整 ↔ 迷你条）
+    func toggleMini() {
+        withAnimation { page = (page == .mini) ? .home : .mini }
+    }
+
     func onCloseBehaviorChanged() {
         ud.set(closeBehavior, forKey: "closeBehavior")
     }
@@ -310,8 +571,15 @@ final class EarnModel: ObservableObject {
         ud.set(baseEarned, forKey: "baseEarned")
         ud.set(working, forKey: "working")
         ud.set(workedBeforeSession, forKey: "workedBeforeSession")
+        ud.set(overtimeSeconds, forKey: "overtimeSeconds")
+        ud.set(dayKey, forKey: "dayKey")
+        ud.set(dayLog, forKey: "dayLog")
         if let c = clockInAt { ud.set(c, forKey: "clockInAt") } else { ud.removeObject(forKey: "clockInAt") }
         writeWidgetSnapshot(reload: true)   // 打卡/校正/改薪等关键事件 → 通知小组件刷新
+    }
+
+    func onAutoOutChanged() {
+        ud.set(autoOutEnabled, forKey: "autoOut")
     }
 }
 
@@ -326,7 +594,8 @@ struct GlassPanel: NSViewRepresentable {
             return v
         } else {
             let v = NSVisualEffectView()
-            v.material = .hudWindow
+            // 浅色/深色都由系统材质自适应（旧系统回退用，新系统走 NSGlassEffectView）
+            v.material = .underWindowBackground
             v.blendingMode = .behindWindow
             v.state = .active
             v.wantsLayer = true
@@ -346,7 +615,31 @@ struct GlassPanel: NSViewRepresentable {
 
 // MARK: - 组件
 
-let redDeep = Color(red: 0.84, green: 0, blue: 0.08)
+// MARK: - 明暗双模式配色（跟随系统外观，无需手动切换）
+
+/// 浅色/深色两个值合成一条动态色，系统切换外观时自动生效
+func dynColor(_ light: NSColor, _ dark: NSColor) -> Color {
+    Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+    })
+}
+
+enum Glass {
+    /// 玻璃填充：浅色 = 白雾，深色 = 深灰雾（透明度略高，保证层次）
+    static func fill(_ a: Double) -> Color {
+        dynColor(NSColor(white: 1, alpha: a),
+                 NSColor(white: 0.11, alpha: min(0.94, 0.26 + a * 1.15)))
+    }
+    /// 玻璃描边：浅色 = 亮白线，深色 = 低透明白细线
+    static func line(_ a: Double) -> Color {
+        dynColor(NSColor(white: 1, alpha: a),
+                 NSColor(white: 1, alpha: max(0.055, a * 0.24)))
+    }
+}
+
+// 喜庆红：深色下提亮，避免在暗背景上糊成一团
+let redDeep = dynColor(NSColor(red: 0.84, green: 0, blue: 0.08, alpha: 1),
+                       NSColor(red: 1.0, green: 0.38, blue: 0.34, alpha: 1))
 
 struct IconChip: View {
     let icon: String
@@ -370,9 +663,9 @@ struct IconChip: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(Color.white.opacity(0.32))
+                .fill(Glass.fill(0.32))
                 .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.55), lineWidth: 1))
+                    .strokeBorder(Glass.line(0.55), lineWidth: 1))
         )
     }
 }
@@ -388,8 +681,8 @@ struct GlassIconButton: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(.secondary)
                 .frame(width: 24, height: 24)
-                .background(Circle().fill(Color.white.opacity(0.35)))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.55), lineWidth: 1))
+                .background(Circle().fill(Glass.fill(0.35)))
+                .overlay(Circle().strokeBorder(Glass.line(0.55), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .help(help)
@@ -415,28 +708,37 @@ struct HomeView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Text("💰 小薪薪").font(.system(size: 15, weight: .bold))
+                .fixedSize()
             Text("v\(APP_VERSION)")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 6).padding(.vertical, 2)
-                .background(Capsule().fill(Color.white.opacity(0.32)))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.5), lineWidth: 1))
-            Spacer()
-            HStack(spacing: 5) {
+                .lineLimit(1)
+                .fixedSize()
+                .padding(.horizontal, 5).padding(.vertical, 2)
+                .background(Capsule().fill(Glass.fill(0.32)))
+                .overlay(Capsule().strokeBorder(Glass.line(0.5), lineWidth: 1))
+            Spacer(minLength: 2)
+            HStack(spacing: 4) {
                 Circle()
-                    .fill(model.working ? Color.red : Color.gray.opacity(0.6))
+                    .fill(model.overtimeNow ? Color.orange : (model.working ? Color.red : Color.gray.opacity(0.6)))
                     .frame(width: 7, height: 7)
-                    .shadow(color: model.working ? .red : .clear, radius: 4)
-                Text(model.working ? "计费中" : "未打卡")
+                    .shadow(color: model.overtimeNow ? .orange : (model.working ? .red : .clear), radius: 4)
+                Text(model.overtimeNow ? "加班中" : (model.working ? "计费中" : "未打卡"))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
             }
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(Capsule().fill(Color.white.opacity(0.35)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.5), lineWidth: 1))
-            GlassIconButton(symbol: "minus", help: "迷你模式") { withAnimation { model.page = .mini } }
+            .padding(.horizontal, 7).padding(.vertical, 4)
+            .background(Capsule().fill(Glass.fill(0.35)))
+            .overlay(Capsule().strokeBorder(Glass.line(0.5), lineWidth: 1))
+            .fixedSize()
+            // 大小窗口切换：完整 ↔ 迷你条
+            GlassIconButton(symbol: "rectangle.compress.vertical", help: "缩小为迷你条（可再展回大窗）") { withAnimation { model.page = .mini } }
+            // 收缩至状态栏：小窗隐藏，菜单栏图标继续走数
+            GlassIconButton(symbol: "menubar.rectangle", help: "收缩至状态栏（菜单栏继续显示金额）") { model.collapseToStatusBar() }
             GlassIconButton(symbol: "gearshape", help: "设置") { withAnimation { model.page = .settings } }
             GlassIconButton(symbol: "xmark", help: model.closeBehavior == "quit" ? "退出小薪薪" : "收纳到状态栏") { model.requestClose() }
         }
@@ -457,7 +759,8 @@ struct HomeView: View {
 
     private var amountView: some View {
         VStack(spacing: 4) {
-            Text(model.working ? "正在进账 · 今日已到账" : "今日已到账")
+            Text(model.overtimeNow ? "加班计费中 · 今日已到账"
+                 : (model.working ? "正在进账 · 今日已到账" : "今日已到账"))
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -483,8 +786,8 @@ struct HomeView: View {
                 let w = geo.size.width
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color.white.opacity(0.38))
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.6), lineWidth: 1))
+                        .fill(Glass.fill(0.38))
+                        .overlay(Capsule().strokeBorder(Glass.line(0.6), lineWidth: 1))
                         .frame(height: 12)
                         .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
                     Capsule()
@@ -495,7 +798,7 @@ struct HomeView: View {
                         .resizable().scaledToFill()
                         .frame(width: 42, height: 42)
                         .clipShape(Circle())
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 2.5))
+                        .overlay(Circle().strokeBorder(Glass.line(0.9), lineWidth: 2.5))
                         .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
                         .offset(x: max(0, w * model.progress) - 21, y: -20)
                 }
@@ -511,8 +814,19 @@ struct HomeView: View {
 
     private var progressText: String {
         guard model.salary > 0 else { return "在 ⚙️ 设置中填写月薪后开始累计进度" }
+        if model.overtimeNow {
+            return String(format: "已过下班时间，加班计费中 · 已加班 %d 分钟", model.overtimeMinutes)
+        }
+        if !model.working && model.overtimeMinutes > 0 {
+            return String(format: "今日进度 %.1f%% · 今日已加班 %d 分钟", model.progress * 100, model.overtimeMinutes)
+        }
         return String(format: "今日进度 %.1f%% · 距离全天还差 ¥%@", model.progress * 100,
                       fmt(max(0, model.ratePerDay - model.displayEarned)))
+    }
+
+    private var chipOTText: String {
+        let m = Int(model.monthOTSeconds / 60)
+        return m >= 60 ? "\(m/60)时\(m%60)分" : "\(m)分"
     }
 
     // 未填月薪时引导去设置页
@@ -524,7 +838,7 @@ struct HomeView: View {
             }
             .foregroundStyle(redDeep)
             .padding(.horizontal, 16).padding(.vertical, 8)
-            .background(Capsule().fill(Color.white.opacity(0.4)))
+            .background(Capsule().fill(Glass.fill(0.4)))
             .overlay(Capsule().strokeBorder(redDeep.opacity(0.35), lineWidth: 1))
         }
         .buttonStyle(.plain)
@@ -545,6 +859,26 @@ struct HomeView: View {
                          ? "\(model.workedMinutes/60)时\(model.workedMinutes%60)分" : "\(model.workedMinutes)分",
                          label: "今日已工作")
             }
+            HStack(spacing: 8) {
+                // 本月累计进账（点击在下方日志行查看构成）
+                Button {
+                    model.logText = "📈 本月累计进账 ¥\(fmt(model.monthEarned))，其中今日实时 ¥\(fmt(model.displayEarned))"
+                } label: {
+                    IconChip(icon: "📈", value: model.salary > 0 ? "¥" + fmt(model.monthEarned) : "--",
+                             label: "本月累计进账", highlight: true)
+                }
+                .buttonStyle(.plain)
+                // 本月累计加班时长
+                Button {
+                    let m = model.monthOTSeconds / 60
+                    model.logText = m >= 60
+                        ? String(format: "🌙 本月累计加班 %d 小时 %d 分钟", Int(m) / 60, Int(m) % 60)
+                        : "🌙 本月累计加班 \(Int(m)) 分钟"
+                } label: {
+                    IconChip(icon: "🌙", value: chipOTText, label: "本月加班时长")
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.bottom, 14)
     }
@@ -562,7 +896,7 @@ struct HomeView: View {
                                                               startPoint: .top, endPoint: .bottom)))
                     .overlay(Capsule().fill(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.05)],
                                                            startPoint: .top, endPoint: .center)).blendMode(.plusLighter).allowsHitTesting(false))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.5), lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(Glass.line(0.5), lineWidth: 1))
                     .shadow(color: Color(red: 0.88, green: 0.18, blue: 0.13).opacity(0.45), radius: 10, y: 4)
             }
             .buttonStyle(.plain)
@@ -575,8 +909,8 @@ struct HomeView: View {
                     .foregroundStyle(.primary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
-                    .background(Capsule().fill(Color.white.opacity(0.42)))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.6), lineWidth: 1))
+                    .background(Capsule().fill(Glass.fill(0.42)))
+                    .overlay(Capsule().strokeBorder(Glass.line(0.6), lineWidth: 1))
                     .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
             }
             .buttonStyle(.plain)
@@ -597,196 +931,490 @@ struct HomeView: View {
 
 // MARK: - 设置页
 
+// 设置页内容高度测量（用于窗口高度自适应）
+struct PageContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+// 设置页内容高度测量（用于窗口高度自适应）
+struct SettingsContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+// 设置页 UI 状态（折叠分组 / 流水查询输入）
+// 用 ObservableObject 而非 @State：本机 swiftc 的 SwiftUI 宏插件在嵌套沙箱里起不来
+final class SettingsUIState: ObservableObject {
+    static let shared = SettingsUIState()
+    @Published var openGroups: Set<String> = SettingsUIState.initialOpenGroups()
+    @Published var queryStart = ""
+    @Published var queryEnd = ""
+    @Published var rows: [DayLogRow] = []
+    @Published var addDate = ""
+    @Published var addEarned = ""
+    @Published var addOTMin = ""
+    @Published var logError: String?
+    @Published var contentHeight: CGFloat = 0   // 内容实际高度（折叠状态不同）→ 窗口自适应
+    @Published var viewportHeight: CGFloat = 0  // SwiftUI 视口高度：始终等于窗口高度，避免溢出绘制
+    @Published var pageHeights: [String: CGFloat] = [:]   // 首页/迷你条的内容自然高度（关掉 sizingOptions 后只能自己量）
+    var forceHeight: CGFloat?                   // 导出截图时的高度上限
+    var exportMode = false                      // 导出截图：按内容高度贴合，避免滚动裁切/居中留白
+
+    static let allGroups = ["salary", "time", "correct", "look", "window", "ledger"]
+
+    /// 设置页高度上限：内容短则贴合内容，超出上限在页内滚动
+    static func maxViewport() -> CGFloat {
+        if let f = shared.forceHeight { return f }
+        if let s = ProcessInfo.processInfo.environment["XINXIN_SETTINGS_H"], let v = Double(s), v >= 400 {
+            return CGFloat(v)
+        }
+        return min(955, max(560, (NSScreen.main?.visibleFrame.height ?? 900) - 32))
+    }
+
+    /// 目标视口高度（窗口与 SwiftUI 用同一个值，避免两者不一致导致内容溢出重叠）
+    static func viewport(contentHeight h: CGFloat) -> CGFloat {
+        let maxH = maxViewport()
+        guard h > 1 else { return maxH * 0.6 }
+        return min(maxH, max(376, h))
+    }
+
+    // 展开状态与真实数据同域存取（截图/演示可用 XINXIN_DEFAULTS_SUITE 隔离）
+    static func store() -> UserDefaults {
+        if let s = ProcessInfo.processInfo.environment["XINXIN_DEFAULTS_SUITE"],
+           let u = UserDefaults(suiteName: s) { return u }
+        return .standard
+    }
+
+    static func initialOpenGroups() -> Set<String> {
+        if let saved = store().stringArray(forKey: "settingsOpenGroups") { return Set(saved) }
+        return ["salary", "time"]
+    }
+
+    func toggleGroup(_ id: String) {
+        if openGroups.contains(id) { openGroups.remove(id) } else { openGroups.insert(id) }
+        Self.store().set(Array(openGroups), forKey: "settingsOpenGroups")
+    }
+
+    func toggleAllGroups() {
+        openGroups = openGroups.count == Self.allGroups.count ? [] : Set(Self.allGroups)
+        Self.store().set(Array(openGroups), forKey: "settingsOpenGroups")
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var model: EarnModel
+    @ObservedObject private var ui = SettingsUIState.shared
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("⚙️ 设置").font(.system(size: 15, weight: .bold))
-                Spacer()
-                GlassIconButton(symbol: "chevron.left", help: "返回") { withAnimation { model.page = .home } }
+        Group {
+            if ui.exportMode {
+                settingsScroll.frame(maxHeight: settingsMaxHeight)
+            } else {
+                settingsScroll.frame(height: ui.viewportHeight > 1
+                                    ? ui.viewportHeight
+                                    : SettingsUIState.viewport(contentHeight: ui.contentHeight))
             }
-            .padding(.bottom, 6)
+        }
+        .clipped()   // 动画中间帧兜底：溢出内容裁在滚动区内，绝不画到别的卡片上
+    }
 
-            sectionLabel("每月税后工资")
-            HStack(spacing: 6) {
-                Text("¥").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
-                TextField("输入每月税后工资", text: $model.salaryText).textFieldStyle(.plain)
-                    .font(.system(size: 15, weight: .semibold))
-                Text("/月").font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 11)
-            .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.white.opacity(0.3)))
-            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.55), lineWidth: 1))
+    private var settingsScroll: some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                // 标题栏 + 全部展开/折叠
+                HStack(spacing: 6) {
+                    Text("⚙️ 设置").font(.system(size: 15, weight: .bold))
+                    Spacer()
+                    GlassIconButton(symbol: ui.openGroups.count == SettingsUIState.allGroups.count
+                                    ? "rectangle.compress.vertical" : "rectangle.expand.vertical",
+                                    help: ui.openGroups.count == SettingsUIState.allGroups.count ? "全部折叠" : "全部展开") {
+                        toggleAllGroups()
+                    }
+                    GlassIconButton(symbol: "chevron.left", help: "返回") { withAnimation { model.page = .home } }
+                }
+                .padding(.bottom, 2)
 
-            sectionLabel("每月工作天数")
-            HStack(spacing: 6) {
-                TextField("自动 \(model.autoDays) 天（按法定节假日）", text: $model.workDaysText)
-                    .textFieldStyle(.plain).font(.system(size: 15, weight: .semibold))
-                Text("天").font(.system(size: 12)).foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 16).padding(.vertical, 11)
-            .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.white.opacity(0.3)))
-            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.55), lineWidth: 1))
+                // MARK: 💰 薪酬与工作天数
+                group("salary", icon: "💰", title: "薪酬与工作天数",
+                      summary: model.salary > 0 ? "¥\(fmt(model.salary, 0))/月 · \(model.workDays) 天" : "未设置") {
+                    fieldLabel("每月税后工资")
+                    HStack(spacing: 6) {
+                        Text("¥").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary)
+                        TextField("输入每月税后工资", text: $model.salaryText).textFieldStyle(.plain)
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("/月").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Glass.fill(0.3)))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Glass.line(0.55), lineWidth: 1))
 
-            Text("本月按 2026 国办法定节假日自动计算为 \(model.autoDays) 天（已扣节假日、含调休补班）。清空即恢复自动。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 8)
+                    fieldLabel("每月工作天数", trailing: "自动 \(model.autoDays) 天")
+                    HStack(spacing: 6) {
+                        TextField("自动 \(model.autoDays) 天（按法定节假日）", text: $model.workDaysText)
+                            .textFieldStyle(.plain).font(.system(size: 15, weight: .semibold))
+                        Text("天").font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Glass.fill(0.3)))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Glass.line(0.55), lineWidth: 1))
 
-            sectionLabel("每日工作时长", trailing: String(format: "= %.1f 小时/天", model.effectiveHours))
-            HStack(spacing: 8) {
-                scheduleField(label: "上班", text: $model.workStartText, placeholder: "09:00", width: 58)
-                scheduleField(label: "下班", text: $model.workEndText, placeholder: "18:00", width: 58)
-                scheduleField(label: "休息", text: $model.breakMinText, placeholder: "60", width: 46, unit: "分钟")
-                Spacer(minLength: 0)
-            }
+                    caption("本月按 2026 国办法定节假日自动计算为 \(model.autoDays) 天（已扣节假日、含调休补班）。清空即恢复自动。")
+                }
 
-            Text("实际计费工时 = 下班 − 上班 − 休息，默认 09:00–18:00 休 60 分钟即 8 小时。费率 = 月薪 ÷ 工作日 ÷ 实际工时。支持跨零点（如 22:00–06:00）。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 8)
+                // MARK: ⏰ 工作时间 · 自动下班
+                group("time", icon: "⏰", title: "工作时间 · 自动下班",
+                      summary: "\(model.workStartText)–\(model.workEndText) · \(String(format: "%.1f", model.effectiveHours))h") {
+                    fieldLabel("每日工作时长", trailing: String(format: "= %.1f 小时/天", model.effectiveHours))
+                    // 两行排布：一行放三个输入框会超出卡片内宽，被压缩后看着就是“变形”
+                    VStack(spacing: 6) {
+                        HStack(spacing: 8) {
+                            scheduleField(label: "上班", text: $model.workStartText, placeholder: "09:00", width: 58)
+                            scheduleField(label: "下班", text: $model.workEndText, placeholder: "18:00", width: 58)
+                            Spacer(minLength: 0)
+                        }
+                        HStack(spacing: 8) {
+                            scheduleField(label: "休息", text: $model.breakMinText, placeholder: "60", width: 46, unit: "分钟")
+                            Spacer(minLength: 0)
+                        }
+                    }
 
-            sectionLabel("校正今日工时")
-            HStack(spacing: 8) {
-                TextField("如 5.5", text: $model.manualHoursText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                    .frame(width: 60)
-                Text("小时").font(.system(size: 11)).foregroundStyle(.secondary)
-                Button {
-                    model.correctWork(hours: Double(model.manualHoursText) ?? -1)
-                    model.manualHoursText = ""
-                } label: {
-                    Text("✓ 校正")
-                        .font(.system(size: 12, weight: .semibold))
-                        .padding(.horizontal, 14).padding(.vertical, 8)
+                    caption("实际计费工时 = 下班 − 上班 − 休息，默认 09:00–18:00 休 60 分钟即 8 小时。费率 = 月薪 ÷ 工作日 ÷ 实际工时。支持跨零点（如 22:00–06:00）。")
+
+                    fieldLabel("自动下班", trailing: model.autoOutEnabled ? "已开启" : "已关闭")
+                    HStack(spacing: 10) {
+                        Image(systemName: model.autoOutEnabled ? "alarm.waves.left.and.right.fill" : "moon.zzz")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(model.autoOutEnabled ? redDeep : .secondary)
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("到下班时间自动打卡").font(.system(size: 12, weight: .semibold))
+                            Text("自动下班后再打卡计为加班，首页显示「加班中」")
+                                .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $model.autoOutEnabled)
+                            .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                            .onChange(of: model.autoOutEnabled) { _ in model.onAutoOutChanged() }
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 9)
+                    .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Glass.fill(0.24)))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Glass.line(0.5), lineWidth: 1))
+                }
+
+                // MARK: ⏱ 工时校正
+                group("correct", icon: "⏱", title: "工时校正",
+                      summary: String(format: "今日已计 %.1f 小时", model.totalWorkedHours)) {
+                    HStack(spacing: 8) {
+                        TextField("如 5.5", text: $model.manualHoursText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14, weight: .semibold))
+                            .multilineTextAlignment(.center)
+                            .frame(width: 60)
+                            .padding(.vertical, 7)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Glass.fill(0.3)))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Glass.line(0.5), lineWidth: 1))
+                        Text("小时").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Button {
+                            model.correctWork(hours: Double(model.manualHoursText) ?? -1)
+                            model.manualHoursText = ""
+                        } label: {
+                            Text("✓ 校正")
+                                .font(.system(size: 12, weight: .semibold))
+                                .padding(.horizontal, 14).padding(.vertical, 7)
+                        }
+                        .buttonStyle(.plain)
+                        .background(Capsule().fill(Glass.fill(0.42)))
+                        .overlay(Capsule().strokeBorder(Glass.line(0.6), lineWidth: 1))
+                        .disabled((Double(model.manualHoursText) ?? -1) < 0)
+                        .opacity((Double(model.manualHoursText) ?? -1) >= 0 ? 1 : 0.62)
+                        Spacer()
+                        Text("当前已计 \(String(format: "%.1f", model.totalWorkedHours)) 小时")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 9)
+                    .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Glass.fill(0.24)))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Glass.line(0.5), lineWidth: 1))
+
+                    caption("填今天实际工作的总小时数（0–24，多了少了都行），App 会与已计工时求差额并按当前费率补记或核减。适合忘打卡、中途外出、加班补差。")
+                }
+
+                // MARK: 🎨 外观与图标
+                group("look", icon: "🎨", title: "外观与图标",
+                      summary: (model.iconImage != nil ? "自定义图标" : "默认金币")
+                               + (model.barSymbol.isEmpty ? " · 状态栏仅数字" : " · \(model.barSymbol)")) {
+                    fieldLabel("进度条图标")
+                    HStack(spacing: 12) {
+                        if let img = model.iconImage {
+                            Image(nsImage: img).resizable().scaledToFill()
+                                .frame(width: 44, height: 44)
+                                .clipShape(Circle())
+                                .overlay(Circle().strokeBorder(Glass.line(0.9), lineWidth: 2.5))
+                                .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                        }
+                        VStack(spacing: 6) {
+                            Button { uploadIcon() } label: {
+                                Text("上传自定义图标")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(maxWidth: .infinity).padding(.vertical, 7)
+                            }
+                            .buttonStyle(.plain)
+                            .background(Capsule().fill(Glass.fill(0.42)))
+                            .overlay(Capsule().strokeBorder(Glass.line(0.6), lineWidth: 1))
+
+                            Button { model.setCustomIcon(nil) } label: {
+                                Text("恢复默认金币")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .frame(maxWidth: .infinity).padding(.vertical, 7)
+                            }
+                            .buttonStyle(.plain)
+                            .background(Capsule().fill(Glass.fill(0.42)))
+                            .overlay(Capsule().strokeBorder(Glass.line(0.6), lineWidth: 1))
+                        }
+                    }
+                    caption("图标自动裁圆并吸取主色，用于进度条与背景渐变。")
+
+                    fieldLabel("状态栏符号", trailing: model.barSymbol.isEmpty ? "当前：仅数字" : "当前：\(model.barSymbol)")
+                    HStack(spacing: 8) {
+                        TextField("留空=仅数字", text: $model.barSymbol)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14, weight: .semibold))
+                            .multilineTextAlignment(.center)
+                            .frame(width: 78)
+                            .padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Glass.fill(0.3)))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(Glass.line(0.5), lineWidth: 1))
+                            .onChange(of: model.barSymbol) { _ in model.onBarSymbolChanged() }
+                        ForEach(["💰", "⏱", "☀️", "🌱", "⚡"], id: \.self) { e in
+                            Button { model.barSymbol = e; model.onBarSymbolChanged() } label: {
+                                Text(e).font(.system(size: 15))
+                                    .frame(width: 30, height: 28)
+                            }
+                            .buttonStyle(.plain)
+                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(Glass.fill(model.barSymbol == e ? 0.6 : 0.24)))
+                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .strokeBorder(Glass.line(model.barSymbol == e ? 0.75 : 0.45), lineWidth: 1))
+                        }
+                    }
+                    caption("金额前面的字符，任意 emoji 或符号都可以；留空则只显示数字。")
+                }
+
+                // MARK: 🪟 窗口行为
+                group("window", icon: "🪟", title: "窗口行为",
+                      summary: model.closeBehavior == "quit" ? "关闭=退出" : "关闭=收纳状态栏") {
+                    fieldLabel("点击关闭按钮时")
+                    HStack(spacing: 8) {
+                        closeOption("收纳到状态栏", value: "hide", icon: "dock.rectangle")
+                        closeOption("直接退出", value: "quit", icon: "power")
+                    }
+                    caption("收纳到状态栏：小窗隐藏，状态栏图标继续显示金额与进度，点击随时恢复。直接退出：结束 App，今日累计会保留到下次打开。")
+                }
+
+                // MARK: 📋 流水明细
+                group("ledger", icon: "📋", title: "流水明细",
+                      summary: "共 \(model.dayLogTotal) 天 · 可查询/增删") {
+                    fieldLabel("按日期范围查询")
+                    HStack(spacing: 6) {
+                        logField("开始 2026-11-01", text: $ui.queryStart, width: 96)
+                        Text("至").font(.system(size: 11)).foregroundStyle(.secondary)
+                        logField("结束 2026-11-30", text: $ui.queryEnd, width: 96)
+                        Button { runLogQuery() } label: {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 11, weight: .bold))
+                                .frame(width: 30, height: 26)
+                        }
+                        .buttonStyle(.plain)
+                        .background(Capsule().fill(Glass.fill(0.42)))
+                        .overlay(Capsule().strokeBorder(Glass.line(0.6), lineWidth: 1))
+                        .help("按日期范围查询")
+                    }
+                    if let msg = ui.logError {
+                        Text(msg)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(redDeep)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 6)
+                    }
+                    if ui.rows.isEmpty {
+                        Text("暂无流水记录（每天下班 / 跨天时自动落账）")
+                            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 12)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Glass.fill(0.18)))
+                            .padding(.top, 6)
+                    } else {
+                        VStack(spacing: 4) {
+                            ForEach(ui.rows) { r in
+                                HStack(spacing: 8) {
+                                    Text(String(r.key.dropFirst(5)).replacingOccurrences(of: "-", with: "/"))
+                                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 40, alignment: .leading)
+                                    Text(r.key).font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.secondary.opacity(0.7))
+                                    Spacer(minLength: 0)
+                                    Text("¥" + fmt(r.earned))
+                                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(redDeep)
+                                    Text(r.otSeconds >= 60 ? "加班 \(Int(r.otSeconds / 60)) 分" : "—")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 50, alignment: .trailing)
+                                    Button { model.removeDayLog(r.key); runLogQuery() } label: {
+                                        Image(systemName: "trash")
+                                            .font(.system(size: 10, weight: .bold))
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 22, height: 22)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("删除 \(r.key) 的记录")
+                                }
+                                .padding(.horizontal, 9).padding(.vertical, 5)
+                                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Glass.fill(0.2)))
+                            }
+                        }
+                        .padding(.top, 6)
+                    }
+                    fieldLabel("手动补记 / 新增")
+                    HStack(spacing: 6) {
+                        logField("日期 2026-11-03", text: $ui.addDate, width: 100)
+                        logField("进账 ¥", text: $ui.addEarned, width: 56)
+                        logField("加班分", text: $ui.addOTMin, width: 42)
+                        Button { addLogRow() } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .bold))
+                                .frame(width: 30, height: 26)
+                        }
+                        .buttonStyle(.plain)
+                        .background(Capsule().fill(Glass.fill(0.42)))
+                        .overlay(Capsule().strokeBorder(Glass.line(0.6), lineWidth: 1))
+                        .help("手动添加该日流水")
+                    }
+                    caption("补记忘记打卡的日子，或删除错误的记录；进账留 0 表示只记加班。今日金额以实时打卡为准。")
+                }
+
+                // 开发者署名（点击查看关于）
+                Button { showAboutPanel() } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color(red: 0.84, green: 0, blue: 0.08).opacity(0.42))
+                            .frame(width: 5, height: 5)
+                        Text(DEV_NAME)
+                            .font(.system(size: 11, weight: .bold)).tracking(2.4)
+                            .foregroundStyle(Color.primary.opacity(0.42))
+                        Text("DEVELOPER")
+                            .font(.system(size: 8, weight: .bold)).tracking(1.1)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(Capsule().fill(Glass.fill(0.3)))
+                    .overlay(Capsule().strokeBorder(Glass.line(0.62), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
                 }
                 .buttonStyle(.plain)
-                .background(Capsule().fill(Color.white.opacity(0.42)))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.6), lineWidth: 1))
-                .disabled((Double(model.manualHoursText) ?? -1) < 0)
-                .opacity((Double(model.manualHoursText) ?? -1) >= 0 ? 1 : 0.62)
-                Spacer()
-                Text("当前已计 \(String(format: "%.1f", model.totalWorkedHours)) 小时")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white.opacity(0.24)))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.5), lineWidth: 1))
-
-            Text("填今天实际工作的总小时数（0–24，多了少了都行），App 会与已计工时求差额并按当前费率补记或核减。适合忘打卡、中途外出、加班补差。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .help("关于小薪薪 · 开发者 \(DEV_NAME)")
                 .padding(.top, 8)
 
-            sectionLabel("进度条图标")
-            HStack(spacing: 12) {
-                if let img = model.iconImage {
-                    Image(nsImage: img).resizable().scaledToFill()
-                        .frame(width: 48, height: 48)
-                        .clipShape(Circle())
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 2.5))
-                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                }
-                VStack(spacing: 8) {
-                    Button { uploadIcon() } label: {
-                        Text("上传自定义图标")
-                            .font(.system(size: 12, weight: .semibold))
-                            .frame(maxWidth: .infinity).padding(.vertical, 8)
-                    }
-                    .buttonStyle(.plain)
-                    .background(Capsule().fill(Color.white.opacity(0.42)))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.6), lineWidth: 1))
-
-                    Button { model.setCustomIcon(nil) } label: {
-                        Text("恢复默认金币")
-                            .font(.system(size: 12, weight: .semibold))
-                            .frame(maxWidth: .infinity).padding(.vertical, 8)
-                    }
-                    .buttonStyle(.plain)
-                    .background(Capsule().fill(Color.white.opacity(0.42)))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.6), lineWidth: 1))
-                }
+                Spacer(minLength: 0)
             }
-            .padding(.bottom, 8)
-
-            Text("图标自动裁圆并吸取主色，用于进度条与背景渐变。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            sectionLabel("点击关闭按钮时")
-            HStack(spacing: 8) {
-                closeOption("收纳到状态栏", value: "hide", icon: "dock.rectangle")
-                closeOption("直接退出", value: "quit", icon: "power")
+            .padding(20)
+            .background(GeometryReader { g in
+                Color.clear.preference(key: SettingsContentHeightKey.self, value: g.size.height)
+            })
+        }
+        .onPreferenceChange(SettingsContentHeightKey.self) { h in
+            if abs(h - ui.contentHeight) > 1 {
+                ui.contentHeight = h
+                // 内容高度变了（折叠/展开）→ 同一时刻贴合窗口，避免中间帧内容溢出到别的卡片上
+                DispatchQueue.main.async { model.onResize?() }
             }
+        }
+        .onAppear { runLogQuery() }
+    }
 
-            Text("收纳到状态栏：小窗隐藏，状态栏图标继续显示金额与进度，点击随时恢复。直接退出：结束 App，今日累计会保留到下次打开。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 8)
-
-            sectionLabel("状态栏符号", trailing: model.barSymbol.isEmpty ? "当前：仅数字" : "当前：\(model.barSymbol)")
-            HStack(spacing: 8) {
-                TextField("留空=仅数字", text: $model.barSymbol)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14, weight: .semibold))
-                    .multilineTextAlignment(.center)
-                    .frame(width: 78)
-                    .padding(.vertical, 7)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.3)))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.5), lineWidth: 1))
-                    .onChange(of: model.barSymbol) { _ in model.onBarSymbolChanged() }
-                ForEach(["💰", "⏱", "☀️", "🌱", "⚡"], id: \.self) { e in
-                    Button { model.barSymbol = e; model.onBarSymbolChanged() } label: {
-                        Text(e).font(.system(size: 15))
-                            .frame(width: 30, height: 28)
-                    }
-                    .buttonStyle(.plain)
-                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.white.opacity(model.barSymbol == e ? 0.6 : 0.24)))
-                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(Color.white.opacity(model.barSymbol == e ? 0.75 : 0.45), lineWidth: 1))
-                }
-            }
-            Text("金额前面的字符，任意 emoji 或符号都可以；留空则只显示数字。")
-                .font(.system(size: 11)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 8)
-
-            // 开发者署名（点击查看关于）
-            Button { showAboutPanel() } label: {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color(red: 0.84, green: 0, blue: 0.08).opacity(0.42))
-                        .frame(width: 5, height: 5)
-                    Text(DEV_NAME)
-                        .font(.system(size: 11, weight: .bold)).tracking(2.4)
-                        .foregroundStyle(Color.primary.opacity(0.42))
-                    Text("DEVELOPER")
-                        .font(.system(size: 8, weight: .bold)).tracking(1.1)
+    // 折叠分组卡片
+    private func group<C: View>(_ id: String, icon: String, title: String, summary: String,
+                                @ViewBuilder content: () -> C) -> some View {
+        let open = ui.openGroups.contains(id)
+        return VStack(alignment: .leading, spacing: 0) {
+            Button { toggleGroup(id) } label: {
+                HStack(spacing: 7) {
+                    Text(icon).font(.system(size: 12))
+                    Text(title).font(.system(size: 12, weight: .bold))
+                    Spacer(minLength: 6)
+                    Text(summary)
+                        .font(.system(size: 10.5, weight: .semibold))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(open ? 90 : 0))
                 }
-                .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(Capsule().fill(Color.white.opacity(0.3)))
-                .overlay(Capsule().strokeBorder(Color.white.opacity(0.62), lineWidth: 1))
-                .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
+                .padding(.horizontal, 13).padding(.vertical, 10)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help("关于小薪薪 · 开发者 \(DEV_NAME)")
-            .padding(.top, 14)
 
+            if open {
+                VStack(alignment: .leading, spacing: 0) { content() }
+                    .padding(.horizontal, 13)
+                    .padding(.bottom, 12)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Glass.fill(0.2)))
+        .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .strokeBorder(Glass.line(open ? 0.6 : 0.42), lineWidth: 1))
+    }
+
+    // 折叠/展开不做图层过渡动画：SwiftUI 的插入动画会在布局更新前就把内容画出来，
+    // 那几帧内容会压到下面的卡片上（用户看到的就是“窗口变形”）。一次性切换最稳。
+    private func toggleGroup(_ id: String) {
+        ui.toggleGroup(id)
+    }
+
+    private func toggleAllGroups() {
+        ui.toggleAllGroups()
+    }
+
+    // 组内小标题
+    private func fieldLabel(_ s: String, trailing: String? = nil) -> some View {
+        HStack(spacing: 6) {
+            Text(s).font(.system(size: 10.5, weight: .bold)).foregroundStyle(.secondary)
+            if let trailing {
+                Text(trailing)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.secondary.opacity(0.85))
+                    .fixedSize()
+            }
             Spacer(minLength: 0)
         }
-        .padding(20)
+        .padding(.top, 9).padding(.bottom, 5)
     }
+
+    // 组内说明文字：允许按可用宽度换行（不加 fixedSize(vertical:) 会被压成单行截断）
+    private func caption(_ s: String) -> some View {
+        Text(s)
+            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 6)
+    }
+
+
+    private var settingsMaxHeight: CGFloat { SettingsUIState.maxViewport() }
 
     private func sectionLabel(_ s: String, trailing: String? = nil) -> some View {
         HStack(spacing: 6) {
@@ -801,6 +1429,41 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 14).padding(.bottom, 6)
+    }
+
+    // 流水明细小输入框
+    private func logField(_ placeholder: String, text: Binding<String>, width: CGFloat) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .multilineTextAlignment(.center)
+            .frame(width: width)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Glass.fill(0.28)))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Glass.line(0.5), lineWidth: 1))
+    }
+
+    private func runLogQuery() {
+        let s = ui.queryStart.trimmingCharacters(in: .whitespaces)
+        let e = ui.queryEnd.trimmingCharacters(in: .whitespaces)
+        if !s.isEmpty && !isValidDayKey(s) { ui.logError = "开始日期格式应为 yyyy-MM-dd"; return }
+        if !e.isEmpty && !isValidDayKey(e) { ui.logError = "结束日期格式应为 yyyy-MM-dd"; return }
+        ui.logError = nil
+        ui.rows = model.dayLogRows(start: s, end: e)
+    }
+
+    private func addLogRow() {
+        let key = ui.addDate.trimmingCharacters(in: .whitespaces)
+        let earned = Double(ui.addEarned.trimmingCharacters(in: .whitespaces)) ?? -1
+        let ot = Double(ui.addOTMin.trimmingCharacters(in: .whitespaces)) ?? 0
+        if let err = model.insertDayLog(key: key, earned: earned, otMinutes: ot) {
+            ui.logError = err
+            return
+        }
+        ui.logError = nil
+        ui.addDate = ""; ui.addEarned = ""; ui.addOTMin = ""
+        runLogQuery()
     }
 
     // 玻璃风格的二选一（替代系统蓝色分段控件）
@@ -821,9 +1484,9 @@ struct SettingsView: View {
                 Capsule().fill(on
                     ? AnyShapeStyle(LinearGradient(colors: [redDeep.opacity(0.9), redDeep],
                                                    startPoint: .top, endPoint: .bottom))
-                    : AnyShapeStyle(Color.white.opacity(0.32)))
+                    : AnyShapeStyle(Glass.fill(0.32)))
             )
-            .overlay(Capsule().strokeBorder(Color.white.opacity(on ? 0.5 : 0.55), lineWidth: 1))
+            .overlay(Capsule().strokeBorder(Glass.line(on ? 0.5 : 0.55), lineWidth: 1))
             .shadow(color: on ? redDeep.opacity(0.35) : .clear, radius: 6, y: 2)
         }
         .buttonStyle(.plain)
@@ -843,9 +1506,9 @@ struct SettingsView: View {
             }
         }
         .padding(.horizontal, 6).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.3)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Glass.fill(0.3)))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(Color.white.opacity(0.55), lineWidth: 1))
+            .strokeBorder(Glass.line(0.55), lineWidth: 1))
     }
 
     private func uploadIcon() {
@@ -873,13 +1536,13 @@ struct MiniView: View {
                     Image(nsImage: img).resizable().scaledToFill()
                         .frame(width: 34, height: 34)
                         .clipShape(Circle())
-                        .overlay(Circle().strokeBorder(Color.white.opacity(0.9), lineWidth: 2))
+                        .overlay(Circle().strokeBorder(Glass.line(0.9), lineWidth: 2))
                         .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.4))
-                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.6), lineWidth: 1))
+                        Capsule().fill(Glass.fill(0.4))
+                            .overlay(Capsule().strokeBorder(Glass.line(0.6), lineWidth: 1))
                         Capsule()
                             .fill(LinearGradient(colors: [model.accentA, model.accentB], startPoint: .leading, endPoint: .trailing))
                             .frame(width: max(0, geo.size.width * model.progress))
@@ -891,8 +1554,18 @@ struct MiniView: View {
                     .foregroundStyle(redDeep)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                // 大小窗口切换键（迷你 → 完整）
+                Button(action: { withAnimation { model.page = .home } }) {
+                    Image(systemName: "rectangle.expand.vertical")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 16, height: 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("展回大窗")
             }
-            Text(model.working ? "计费中 · 点击展开" : "点击展开")
+            Text(model.overtimeNow ? "加班中 · 点击展开" : (model.working ? "计费中 · 点击展开" : "点击展开"))
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(.secondary)
         }
@@ -906,22 +1579,38 @@ struct MiniView: View {
 
 struct ContentView: View {
     @ObservedObject var model: EarnModel
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         ZStack {
             GlassPanel(cornerRadius: 32).ignoresSafeArea()
-            // 图标主色染色层
-            RadialGradient(colors: [model.accentA.opacity(0.22), .clear],
+            // 图标主色染色层（深色下略增强，避免整块发灰）
+            RadialGradient(colors: [model.accentA.opacity(scheme == .dark ? 0.30 : 0.22), .clear],
                            center: UnitPoint(x: 0.1, y: 0.0), startRadius: 0, endRadius: 420)
                 .ignoresSafeArea().allowsHitTesting(false)
-            RadialGradient(colors: [model.accentB.opacity(0.18), .clear],
+            RadialGradient(colors: [model.accentB.opacity(scheme == .dark ? 0.26 : 0.18), .clear],
                            center: UnitPoint(x: 0.9, y: 1.0), startRadius: 0, endRadius: 420)
                 .ignoresSafeArea().allowsHitTesting(false)
 
-            switch model.page {
-            case .home: HomeView(model: model)
-            case .settings: SettingsView(model: model)
-            case .mini: MiniView(model: model)
+            // 只量「页面内容」的自然高度：ZStack 会被背景渐变撑满，量它等于量窗口
+            Group {
+                switch model.page {
+                case .home: HomeView(model: model).fixedSize(horizontal: false, vertical: true)
+                case .settings: SettingsView(model: model)
+                case .mini: MiniView(model: model).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .background(GeometryReader { g in
+                Color.clear.preference(key: PageContentHeightKey.self, value: g.size.height)
+            })
+        }
+        .onPreferenceChange(PageContentHeightKey.self) { h in
+            // 关闭 sizingOptions 后 hosting 的 fittingSize 恒为 0，只能自己量内容高度
+            guard h > 40 else { return }
+            let key = model.page == .settings ? "settings" : (model.page == .mini ? "mini" : "home")
+            if abs((SettingsUIState.shared.pageHeights[key] ?? 0) - h) > 0.5 {
+                SettingsUIState.shared.pageHeights[key] = h
+                if model.page != .settings { DispatchQueue.main.async { model.onResize?() } }
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
@@ -1011,14 +1700,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func handleLeftClick() {
         if model.statusBarMode {
             model.statusBarMode = false
-            unpinPanelFromEdge(panel)
-            panel.makeKeyAndOrderFront(nil)
+            bringPanelFront()
         } else if panel.isVisible {
             panel.orderOut(nil)
         } else {
-            unpinPanelFromEdge(panel)
-            panel.makeKeyAndOrderFront(nil)
+            bringPanelFront()
         }
+    }
+
+    /// 窗口是普通层级了：唤出时必须主动激活 App，否则会被前台窗口压住
+    private func bringPanelFront() {
+        unpinPanelFromEdge(panel)
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     private func populateMenu() {
@@ -1042,15 +1736,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         punch.target = self
         statusMenu.addItem(punch)
 
-        let full = NSMenuItem(title: "🔍 完整界面（放大）", action: #selector(showFull), keyEquivalent: "")
+        let full = NSMenuItem(title: "🔍 完整界面（大窗）", action: #selector(showFull), keyEquivalent: "")
         full.target = self
         statusMenu.addItem(full)
 
-        let mini = NSMenuItem(title: "▫️ 迷你条（缩小）", action: #selector(showMini), keyEquivalent: "")
+        let mini = NSMenuItem(title: "▫️ 迷你条（小窗，可展回大窗）", action: #selector(showMini), keyEquivalent: "")
         mini.target = self
         statusMenu.addItem(mini)
 
-        let bar = NSMenuItem(title: model.statusBarMode ? "📌 恢复小窗显示" : "📌 缩小至状态栏（显示金额+进度）",
+        let bar = NSMenuItem(title: model.statusBarMode ? "📌 恢复小窗显示" : "📌 收缩至状态栏（菜单栏走数）",
                              action: #selector(toggleStatusBarMode), keyEquivalent: "")
         bar.target = self
         statusMenu.addItem(bar)
@@ -1133,10 +1827,11 @@ func unpinPanelFromEdge(_ panel: NSPanel) {
 
 final class BackdropView: NSView {
     var colors: [NSColor] = []
+    var baseColor: NSColor = .white
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 32, yRadius: 32)
-        NSColor.white.setFill()
+        baseColor.setFill()
         path.fill()
         if colors.count >= 2 {
             ctx.saveGState()
@@ -1151,25 +1846,32 @@ final class BackdropView: NSView {
 }
 
 @MainActor
-func exportShots(to dir: String, model: EarnModel) {
+func exportShots(to dir: String, model: EarnModel, dark: Bool = false) {
     try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     let pages: [(String, Page, CGFloat, CGFloat)] = [
         ("home", .home, 372, 470),
-        ("settings", .settings, 372, 700),
+        ("settings", .settings, 372, 420),
         ("mini", .mini, 330, 120),
     ]
     for (name, page, width, minHeight) in pages {
         model.page = page
+        model.tick()   // 导出时先把金额算到当下（不跑 runloop，否则截图里永远是 0.00）
+        SettingsUIState.shared.exportMode = page == .settings
+        SettingsUIState.shared.forceHeight = page == .settings ? 1500 : nil
         let hosting = NSHostingView(rootView: ContentView(model: model))
+        hosting.appearance = appearance
         var h = max(minHeight, hosting.fittingSize.height)
         if page == .settings { h = max(h, hosting.fittingSize.height) }
         let pad: CGFloat = 46
         let box = NSSize(width: width + pad * 2, height: h + pad * 2)
         let container = BackdropView(frame: NSRect(origin: .zero, size: box))
+        container.appearance = appearance
         container.wantsLayer = true
+        container.baseColor = dark ? NSColor(white: 0.09, alpha: 1) : .white
         container.colors = [
-            NSColor(model.accentA).withAlphaComponent(0.35),
-            NSColor(model.accentB).withAlphaComponent(0.25)
+            NSColor(model.accentA).withAlphaComponent(dark ? 0.42 : 0.35),
+            NSColor(model.accentB).withAlphaComponent(dark ? 0.34 : 0.25)
         ]
         hosting.frame = NSRect(x: pad, y: pad, width: width, height: h)
         container.addSubview(hosting)
@@ -1183,8 +1885,10 @@ func exportShots(to dir: String, model: EarnModel) {
         rep.size = box
         container.cacheDisplay(in: container.bounds, to: rep)
         if let data = rep.representation(using: .png, properties: [:]) {
-            try? data.write(to: URL(fileURLWithPath: dir + "/\(name).png"))
+            try? data.write(to: URL(fileURLWithPath: dir + "/\(name)\(dark ? "-dark" : "").png"))
         }
+        SettingsUIState.shared.forceHeight = nil
+        SettingsUIState.shared.exportMode = false
         model.page = .home
     }
     print("导出完成：\(dir)")
@@ -1283,12 +1987,13 @@ func migrateLegacyDefaultsIfNeeded() {
 }
 let panel = KeyablePanel(
     contentRect: NSRect(x: 0, y: 0, width: 372, height: 560),
-    styleMask: [.borderless, .nonactivatingPanel],
+    styleMask: [.borderless],
     backing: .buffered,
     defer: false
 )
-panel.isFloatingPanel = true
-panel.level = .floating
+// 普通窗口层级：不置顶，切到别的 App 时会被正常遮住
+panel.isFloatingPanel = false
+panel.level = .normal
 panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 panel.isOpaque = false
 panel.backgroundColor = .clear
@@ -1297,28 +2002,96 @@ panel.isMovableByWindowBackground = true
 panel.hidesOnDeactivate = false
 panel.becomesKeyOnlyIfNeeded = true   // 只在点击文本框等需要键盘的场景成为 key，不抢焦点
 
+// 自检：--sim-autoout（配合 EarnModel 的独立 defaults 域）
+// 场景：3 小时前打卡、计划下班在 2 分钟前 → 应自动下班；
+// 再次打卡应识别为加班；强制跨天应清零累计且继续计费。
+@MainActor
+func runSimAutoout(_ model: EarnModel) {
+    model.salaryText = "21000"
+    model.workStartText = "09:00"
+    model.workEndText = timeStr(Date.now.addingTimeInterval(-120))   // 计划下班 = 2 分钟前
+    model.debugStartSession(at: Date.now.addingTimeInterval(-3600 * 3))
+    model.tick()
+    print("SIM1| 自动下班: working=\(model.working) 到账=\(fmt(model.displayEarned))")
+    print("SIM1| log=[\(model.logText)]")
+    model.clockIn()
+    print("SIM2| 加班打卡: overtimeNow=\(model.overtimeNow) log=[\(model.logText)]")
+    model.clockOut()
+    print("SIM3| 加班后下班: otMin=\(model.overtimeMinutes) log=[\(model.logText)]")
+    model.debugStartSession(at: Date.now.addingTimeInterval(-60))
+    model.debugSimulateNewDay()
+    print("SIM4| 跨天重置: earned=\(model.displayEarned) workedMin=\(model.workedMinutes) ot=\(model.overtimeSeconds) working=\(model.working)")
+    print("SIM4| log=[\(model.logText)]")
+    // 本月累计：种一天历史流水（昨天 到账300 / 加班30分钟），今天已重置为 0
+    model.debugSeedDayLog(key: dateKey(Date.now.addingTimeInterval(-86400)), earned: 300, ot: 1800)
+    print("SIM5| 本月累计: earned=\(fmt(model.monthEarned)) otMin=\(Int(model.monthOTSeconds / 60))")
+    // 流水明细：手动添加 → 范围查询 → 删除
+    if let err = model.insertDayLog(key: "2026-11-02", earned: 476.19, otMinutes: 45) {
+        print("SIM6| 插入失败: \(err)")
+    }
+    let found = model.dayLogRows(start: "2026-11-01", end: "2026-11-30").first { $0.key == "2026-11-02" }
+    print("SIM6| 查询: \(found.map { "\($0.key) ¥\(fmt($0.earned)) 加班\(Int($0.otSeconds / 60))分" } ?? "未找到")")
+    let bad = model.insertDayLog(key: "2026-2-30", earned: 1, otMinutes: 0)
+    print("SIM6| 非法日期拒绝: \(bad ?? "未拒绝(!)")")
+    model.removeDayLog("2026-11-02")
+    print("SIM6| 删除后剩余: \(model.dayLogRows(start: "", end: "").count) 条")
+}
+
 MainActor.assumeIsolated {
     migrateLegacyDefaultsIfNeeded()
-    let model = EarnModel()
+    // 自检模式用独立 defaults 域，绝不碰真实数据
+    let simMode = CommandLine.arguments.contains("--sim-autoout")
+    // 可用环境变量指定独立 defaults 域（截图/演示用，绝不碰真实数据）
+    let suite = ProcessInfo.processInfo.environment["XINXIN_DEFAULTS_SUITE"]
+    let model = EarnModel(ud: simMode
+        ? (UserDefaults(suiteName: "xiaoxinxin-sim") ?? .standard)
+        : (suite.flatMap { UserDefaults(suiteName: $0) } ?? .standard))
+
+    // 自检模式：--sim-autoout 模拟 自动下班 → 加班打卡 → 跨天重置 全链路后退出
+    if simMode {
+        runSimAutoout(model)
+        exit(0)
+    }
 
     // 导出界面图模式：--export-shots <目录>
     if let i = CommandLine.arguments.firstIndex(of: "--export-shots"), i + 1 < CommandLine.arguments.count {
-        exportShots(to: CommandLine.arguments[i + 1], model: model)
+        exportShots(to: CommandLine.arguments[i + 1], model: model,
+                    dark: CommandLine.arguments.contains("--dark"))
         exit(0)
     }
     let hosting = NSHostingController(rootView: ContentView(model: model))
+    // 关键：不要让 SwiftUI 反向调整窗口尺寸——它会按当前内容高度把窗口拉回去，
+    // 和我们自己的贴合同步打架，表现出来就是“展开时窗口变形/抖动”
+    hosting.sizingOptions = []
     panel.contentViewController = hosting
+    // sizingOptions 关闭后控制器不再提供 preferredContentSize，挂上去时窗口会被缩成 0×0，
+    // 内容随即被窗口边界裁掉（首页只剩一条）。这里立刻把尺寸写回去。
+    panel.setContentSize(NSSize(width: 372, height: 560))
 
     // 页面切换时同步窗口尺寸（顶部锚定）；进设置页时把面板设为 key 以便输入
     model.onResize = {
         DispatchQueue.main.async {
             let old = panel.frame
-            let fit = hosting.view.fittingSize
             let newW = model.page == .mini ? 330.0 : 372.0
-            let newH = max(90, fit.height)
+            // 设置页高度用内容高度直接算：fittingSize 要等 SwiftUI 布局/动画结束才更新，
+            // 中间几十毫秒会与窗口高度不一致，内容就会溢出画到别的卡片上（观感即“窗口变形”）
+            let newH: CGFloat = model.page == .settings
+                ? SettingsUIState.viewport(contentHeight: SettingsUIState.shared.contentHeight)
+                : max(model.page == .mini ? 90 : 300,
+                      SettingsUIState.shared.pageHeights[model.page == .mini ? "mini" : "home"] ?? 0)
+            // 量不到内容高度时不改窗口，避免把窗口压成一条
+            if model.page != .settings && (SettingsUIState.shared.pageHeights[model.page == .mini ? "mini" : "home"] ?? 0) < 40 { return }
+            // 视口高度与窗口高度同帧对齐：先更新视口，再设窗口，SwiftUI 永远不会按“更大的高度”绘制
+            if model.page == .settings { SettingsUIState.shared.viewportHeight = newH }
             let newFrame = NSRect(x: old.midX - newW / 2, y: old.maxY - newH, width: newW, height: newH)
+            if abs(newFrame.height - old.height) < 0.5 && abs(newFrame.width - old.width) < 0.5 {
+                if model.page == .settings && !panel.isKeyWindow { panel.makeKey() }
+                return
+            }
+            // 窗口与内容视口必须同一帧到位：AppKit 动画会让窗口高度落在视口之后，
+            // 视口比窗口大的那几帧内容就会被裁掉，看起来就是“变形”
             panel.setFrame(newFrame, display: true, animate: false)
-            if model.page == .settings { panel.makeKey() }
+            if model.page == .settings && !panel.isKeyWindow { panel.makeKey() }
         }
     }
     // 关闭收纳：进入状态栏模式（图标显示金额+进度），小窗隐藏、继续计费
@@ -1370,10 +2143,57 @@ MainActor.assumeIsolated {
         model.statusBarMode = true
         panel.orderOut(nil)
     }
+
+    // 诊断用：--shot-panel <文件> 把主面板实际渲染结果存成 PNG（校验有无被窗口裁切）
+    if let i = CommandLine.arguments.firstIndex(of: "--shot-panel"), i + 1 < CommandLine.arguments.count {
+        let path = CommandLine.arguments[i + 1]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            if let cv = panel.contentView, let rep = cv.bitmapImageRepForCachingDisplay(in: cv.bounds) {
+                cv.cacheDisplay(in: cv.bounds, to: rep)
+                if let d = rep.representation(using: .png, properties: [:]) {
+                    try? d.write(to: URL(fileURLWithPath: path))
+                    print("PANEL-SHOT| \(path) \(Int(cv.bounds.width))x\(Int(cv.bounds.height))")
+                }
+            }
+            exit(0)
+        }
+    }
+
+    // 诊断用：--probe-toggle <组id> [--probe-shots <dir>] 展开指定分组并逐帧打印/截图，检查是否抖动/变形
+    if let i = CommandLine.arguments.firstIndex(of: "--probe-toggle"), i + 1 < CommandLine.arguments.count {
+        let gid = CommandLine.arguments[i + 1]
+        var shotDir: String? = nil
+        if let j = CommandLine.arguments.firstIndex(of: "--probe-shots"), j + 1 < CommandLine.arguments.count {
+            shotDir = CommandLine.arguments[j + 1]
+            try? FileManager.default.createDirectory(atPath: shotDir!, withIntermediateDirectories: true)
+        }
+        model.page = .settings
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            let f0 = panel.frame
+            print("PROBE| before \(Int(f0.width))x\(Int(f0.height)) content=\(Int(SettingsUIState.shared.contentHeight)) open=\(SettingsUIState.shared.openGroups.sorted())")
+            withAnimation(.easeInOut(duration: 0.18)) { SettingsUIState.shared.toggleGroup(gid) }
+            for k in 0..<36 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.03 * Double(k)) {
+                    let f = panel.frame
+                    print("PROBE| t=\(k * 30)ms \(Int(f.width))x\(Int(f.height)) content=\(Int(SettingsUIState.shared.contentHeight))")
+                    if let dir = shotDir, k % 2 == 0, let cv = panel.contentView,
+                       let rep = cv.bitmapImageRepForCachingDisplay(in: cv.bounds) {
+                        cv.cacheDisplay(in: cv.bounds, to: rep)
+                        if let d = rep.representation(using: .png, properties: [:]) {
+                            try? d.write(to: URL(fileURLWithPath: "\(dir)/f\(String(format: "%02d", k)).png"))
+                        }
+                    }
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { exit(0) }
+        }
+    }
     app.mainMenu = buildMainMenu(appName: "小薪薪")
     app.setActivationPolicy(.regular)   // 常规应用：Dock 图标 + Cmd-Tab，不会被当成后台偷跑
     app.activate(ignoringOtherApps: true)
     panel.makeKeyAndOrderFront(nil)
+    // 启动后按真实内容贴合一次：关掉 sizingOptions 后窗口不会再自动适配内容
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { model.onResize?() }
     let statusBar = StatusBarController(panel: panel, model: model)  // 必须强持有，否则释放后点击失效
     _ = statusBar
 

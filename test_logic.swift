@@ -58,6 +58,32 @@ struct LogicTests {
         assert(abs(hours("09:00", "09:30", 60) - WORK_HOURS) < 1e-9, "工时过短回退默认 8h")
         print("✅ 工时自定义 6 项通过（含跨零点与非法回退）")
 
+        // 班次下班时刻（自动下班/加班判定用）
+        func endAt(_ dateStr: String, _ hhmm: String, start: String = "09:00") -> String {
+            timeStr(shiftEndTime(now: d(dateStr) + 3600, startStr: start, endStr: hhmm)!)  // +1h 进入当天
+        }
+        func endDay(_ dateStr: String, _ hhmm: String, start: String = "09:00") -> String {
+            dateKey(shiftEndTime(now: d(dateStr) + 3600, startStr: start, endStr: hhmm)!)
+        }
+        assert(endAt("2026-11-05", "18:00") == "18:00", "同日班 → 当天 18:00")
+        assert(endDay("2026-11-05", "18:00") == "2026-11-05", "同日班不跨天")
+        assert(endDay("2026-11-05", "06:00", start: "22:00") == "2026-11-06", "跨零点班（22 点后打卡）→ 次日 06:00")
+        // 跨零点班、现在还在白天（未过当天 start）→ 当天 end
+        let noonEnd = shiftEndTime(now: d("2026-11-05") + 12 * 3600, startStr: "22:00", endStr: "06:00")
+        assert(noonEnd != nil && dateKey(noonEnd!) == "2026-11-05" && timeStr(noonEnd!) == "06:00",
+               "跨零点班（22 点前）→ 当天 06:00")
+        assert(shiftEndTime(now: d("2026-11-05"), startStr: "09:00", endStr: "abc") == nil, "非法时间返回 nil")
+        print("✅ 班次下班时刻 5 项通过（同日/跨零点/非法）")
+
+        // 流水明细日期校验
+        assert(isValidDayKey("2026-11-05"))
+        assert(isValidDayKey("2024-02-29"), "闰年 2/29 有效")
+        assert(!isValidDayKey("2026-02-30"), "2/30 应拒绝")
+        assert(!isValidDayKey("2026-13-01"), "13 月应拒绝")
+        assert(!isValidDayKey("2026-1-5"), "位数不足应拒绝")
+        assert(!isValidDayKey("abc"), "乱串应拒绝")
+        print("✅ 日期校验 6 项通过")
+
         // 吸色：黄底超人图 → 应提取出含黄色的主色对
         if let img = NSImage(contentsOf: URL(fileURLWithPath: "assets/action-kamen.png")),
            let (a, b) = extractPalette(img) {
