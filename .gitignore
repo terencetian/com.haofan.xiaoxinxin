@@ -13,6 +13,8 @@ build/
 小薪薪产品手册.pdf
 小薪薪产品手册.html
 手册排版.html
+manual-assets/*.png
+tools/__pycache__/
 
 # 历史版本
 _旧版本/

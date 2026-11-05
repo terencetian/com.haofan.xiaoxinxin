@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>小薪薪 · 产品手册</title>
+<style>
+:root{
+  --ink:#1a1d21; --ink-2:#3f464e; --ink-3:#6b7480;
+  --line:#e3e6ea; --line-strong:#c9ced6;
+  --bg:#ffffff; --bg-soft:#f7f8fa; --bg-warm:#fffaf0;
+  --accent:#c0392b; --accent-soft:#fdf0ee;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0; padding:0 20px 80px;
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  font-size:15px; line-height:1.75; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:900px; margin:0 auto;}
+h1{
+  font-size:28px; line-height:1.4; margin:56px 0 8px; padding-bottom:16px;
+  border-bottom:3px solid var(--accent); font-weight:700; letter-spacing:-.3px;
+}
+h2{
+  font-size:21px; margin:52px 0 18px; padding:6px 0 6px 14px; font-weight:700;
+  border-left:5px solid var(--accent); border-radius:0 4px 4px 0;
+  background:linear-gradient(90deg,var(--accent-soft),transparent 65%);
+  letter-spacing:-.2px;
+}
+h3{font-size:17px; margin:32px 0 12px; font-weight:600; color:var(--ink);}
+h4{font-size:15.5px; margin:24px 0 10px; font-weight:600; color:var(--ink-2);}
+p{margin:10px 0; color:var(--ink-2);}
+strong{color:var(--ink); font-weight:600;}
+blockquote{
+  margin:20px 0; padding:14px 20px; background:var(--bg-warm);
+  border-left:3px solid #e0a83a; border-radius:0 6px 6px 0;
+  color:var(--ink-2); font-size:14.5px;
+}
+blockquote p{margin:4px 0;}
+blockquote strong{color:var(--accent);}
+hr{border:0; border-top:1px solid var(--line); margin:40px 0;}
+table{
+  width:100%; border-collapse:collapse; margin:18px 0; font-size:14px;
+  table-layout:auto;
+}
+th{
+  background:#eef0f3; color:var(--ink); font-weight:600; text-align:left;
+  padding:10px 12px; border:1px solid var(--line); white-space:nowrap; font-size:13.5px;
+}
+td{
+  padding:10px 12px; border:1px solid var(--line); color:var(--ink-2);
+  vertical-align:top;
+}
+td:first-child{font-weight:500; color:var(--ink);}
+tr:nth-child(even) td{background:#fcfcfd;}
+tbody tr:hover td{background:#f7f8fa;}
+code{
+  font-family:"SF Mono",Menlo,Consolas,monospace; font-size:12.5px;
+  background:var(--accent-soft); color:var(--accent);
+  padding:1px 5px; border-radius:4px; font-weight:500; white-space:nowrap;
+}
+pre{
+  background:#1f2428; color:#e6edf3; padding:16px 18px; border-radius:8px;
+  overflow-x:auto; font-size:13px; line-height:1.6; margin:18px 0;
+}
+pre code{background:none; color:inherit; padding:0; font-weight:400; white-space:pre;}
+ul,ol{padding-left:24px; margin:10px 0; color:var(--ink-2);}
+li{margin:5px 0;}
+ul li::marker{color:var(--accent);}
+a{color:var(--accent); text-decoration:none; border-bottom:1px solid #f0c4bd;}
+@media print{
+  body{padding:0; font-size:11pt;}
+  h2{page-break-after:avoid;} table{page-break-inside:auto;} tr{page-break-inside:avoid;}
+}
+@media (max-width:640px){
+  body{padding:0 14px 60px; font-size:14px;}
+  h1{font-size:23px;} h2{font-size:19px;}
+  table{font-size:12.5px;} th,td{padding:8px;}
+}
+</style>
+</head>
