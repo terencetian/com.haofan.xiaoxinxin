@@ -39,23 +39,26 @@ echo "[5/7] 签名（优先用本机自建身份，回退 ad-hoc）"
 SIGN_ID="Xiaoxinxin Dev"
 security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_ID" || SIGN_ID="-"
 echo "    使用身份：$SIGN_ID"
-find "$STAGE" -name ".BC.T_*" -delete 2>/dev/null || true
+find "$STAGE" \( -name ".BC.T_*" -o -name "*.cstemp" \) -delete 2>/dev/null || true
 # 关键：先签 appex（带沙盒 entitlements），再签主 app，且绝不能 --deep
 # --deep 重签嵌套代码会把扩展的 entitlements 覆盖掉 → 未沙盒化的扩展系统永不注册
 codesign --force --sign "$SIGN_ID" --entitlements Widget/Salary.entitlements "$AEX"
+# codesign 偶发留下 *.cstemp 临时二进制，不清掉会破坏封装签名（codesign -v 报 sealed resource is missing）
+find "$AEX" -name "*.cstemp" -delete 2>/dev/null || true
 codesign --force --sign "$SIGN_ID" "$STAGE"
 echo "    appex entitlements："
 codesign -d --entitlements - "$AEX" 2>&1 | grep -E "app-sandbox|temporary-exception" | head -3
-codesign -v --verbose=2 "$STAGE" 2>&1 | tail -1
+# 严格校验：appex 必须单独通过，主 app 也要通过（不带 --deep，--deep 会连带验嵌套组件）
+codesign -v --strict "$AEX" || { echo "✗ appex 签名校验失败，中止"; exit 1; }
+codesign -v --strict "$STAGE" || { echo "✗ 主 app 签名校验失败，中止"; exit 1; }
 
 echo "[6/7] 安装到 /Applications（workspace 里的 .app 不再覆盖：安全策略会拦截）"
 ditto "$STAGE" "$INSTALL"
 # ditto 会在目标内留下 .BC.T_* 临时文件，破坏封装签名，必须清掉并复核
-find "$INSTALL" -name ".BC.T_*" -delete 2>/dev/null || true
-codesign -v --verbose=2 "$INSTALL" 2>&1 | tail -1
-# ditto 会在目标内留下 .BC.T_* 临时文件，破坏封装签名，必须清掉并复核
-find "$INSTALL" -name ".BC.T_*" -delete 2>/dev/null || true
-codesign -v --verbose=2 "$INSTALL" 2>&1 | tail -1
+find "$INSTALL" \( -name ".BC.T_*" -o -name "*.cstemp" \) -delete 2>/dev/null || true
+codesign -v --strict "$INSTALL/Contents/PlugIns/Salary.appex" || { echo "✗ 安装后 appex 校验失败，中止"; exit 1; }
+codesign -v --strict "$INSTALL" || { echo "✗ 安装后主 app 校验失败，中止"; exit 1; }
+echo "    签名校验：appex ✓ 主 app ✓"
 
 echo "[7/7] 重新注册扩展并重启 chronod / Dock"
 LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
