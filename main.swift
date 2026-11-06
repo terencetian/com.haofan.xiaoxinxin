@@ -98,7 +98,7 @@ func showAboutPanel() {
         .version: "Build \(APP_BUILD)",
         .credits: credits,
     ] as [NSApplication.AboutPanelOptionKey: Any])
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp.activate()
 }
 
 // MARK: - 计薪模型
@@ -287,6 +287,8 @@ final class EarnModel: ObservableObject {
         autoOutEnabled = ud.object(forKey: "autoOut") == nil ? true : ud.bool(forKey: "autoOut")
         autoInEnabled = ud.object(forKey: "autoIn") == nil ? true : ud.bool(forKey: "autoIn")
         launchAtLogin = LaunchAtLogin.isEnabled
+        // 截图/自检专用：裸二进制拿不到 SMAppService 真实状态，按环境变量假设已开启（不影响生产）
+        if ProcessInfo.processInfo.environment["XINXIN_SHOT_FORCE_LOGIN"] == "1" { launchAtLogin = true }
         autoInKey = ud.string(forKey: "autoInKey") ?? ""
         overtimeSeconds = ud.double(forKey: "overtimeSeconds")
         if let raw = ud.dictionary(forKey: "dayLog") as? [String: [String: NSNumber]] {
@@ -1908,9 +1910,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     /// 窗口是普通层级了：唤出时必须主动激活 App，否则会被前台窗口压住
     private func bringPanelFront() {
-        unpinPanelFromEdge(panel)
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        forcePanelFront(panel)
     }
 
     private func populateMenu() {
@@ -1966,8 +1966,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func showPanel(as page: Page) {
         model.statusBarMode = false
         withAnimation { model.page = page }
-        unpinPanelFromEdge(panel)
-        panel.makeKeyAndOrderFront(nil)
+        forcePanelFront(panel)
     }
 
     @objc private func openSettings() { showPanel(as: .settings) }
@@ -1976,8 +1975,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func toggleStatusBarMode() {
         if model.statusBarMode {
             model.statusBarMode = false
-            unpinPanelFromEdge(panel)
-            panel.makeKeyAndOrderFront(nil)
+            forcePanelFront(panel)
         } else {
             model.statusBarMode = true
             panel.orderOut(nil)
@@ -1988,7 +1986,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func togglePanel() {
-        if panel.isVisible { panel.orderOut(nil) } else { panel.makeKeyAndOrderFront(nil) }
+        if panel.isVisible { panel.orderOut(nil) } else { forcePanelFront(panel) }
     }
 
     @objc private func quitApp() { NSApp.terminate(nil) }
@@ -2019,6 +2017,27 @@ func unpinPanelFromEdge(_ panel: NSPanel) {
     if f.minY < v.minY + margin { f.origin.y = v.minY + margin }
     if f.maxY > screen.frame.maxY - margin { f.origin.y = screen.frame.maxY - margin - f.height }
     panel.setFrameOrigin(f.origin)
+}
+
+// 把面板可靠地提到最前。
+// 只调 makeKeyAndOrderFront 并不够：应用没被激活时，窗口只会排到「本 App 窗口栈」的顶，
+// 别的 App 的普通层级窗口照样压在它上面——用户看到的就是「点了小薪薪，窗口没出来」。
+// 顺序很关键：先激活自己，再前置，再在下一拍复查兜底。
+@MainActor
+func forcePanelFront(_ panel: NSPanel) {
+    unpinPanelFromEdge(panel)
+    if !panel.isVisible { panel.orderFront(nil) }
+    panel.makeKeyAndOrderFront(nil)
+    if !NSApp.isActive { NSApp.activate() }
+    // 激活有可能被系统忽略（比如从后台被唤起），这时直接把窗口提到本层级最前，
+    // 至少不会出现「窗口存在但被别的 App 盖住」的观感
+    DispatchQueue.main.async {
+        guard panel.isVisible else { return }
+        if !NSApp.isActive || !panel.isKeyWindow {
+            panel.orderFrontRegardless()
+            panel.makeKey()
+        }
+    }
 }
 
 // MARK: - 界面图导出（产品手册用：--export-shots <目录>）
@@ -2095,8 +2114,11 @@ func exportShots(to dir: String, model: EarnModel, dark: Bool = false) {
 // MARK: - 入口
 
 // 无边框面板默认不能成为 key window（键盘输入进不来）——必须子类化放行
+// canBecomeMain 同样是 false：NSPanel 默认不做主窗口，于是「激活 App 时抬起主窗口」
+// 这一步没有窗口可抬，面板就一直留在别的 App 窗口后面（点 Dock 图标看不到窗口的真正原因）
 final class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }
 
 // 常规应用（有 Dock 图标 / Cmd-Tab / 菜单栏），点击 Dock 图标要能把面板捞回来
@@ -2484,8 +2506,7 @@ MainActor.assumeIsolated {
         model.statusBarMode = true
         model.logText = "🌤 已随机启动，点状态栏图标即可展开；到上班时间会自动开始计费"
     } else {
-        app.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        forcePanelFront(panel)
         // 启动后按真实内容贴合一次：关掉 sizingOptions 后窗口不会再自动适配内容
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { model.onResize?() }
     }
@@ -2496,18 +2517,14 @@ MainActor.assumeIsolated {
     let bringPanelBack: () -> Void = {
         model.statusBarMode = false
         withAnimation { model.page = .home }
-        unpinPanelFromEdge(panel)
-        panel.makeKeyAndOrderFront(nil)
-        app.activate(ignoringOtherApps: true)
+        forcePanelFront(panel)
     }
     URLOpener.shared.onOpen = bringPanelBack
     appDelegate.onReopen = bringPanelBack
     appDelegate.onShowSettings = {
         model.statusBarMode = false
         withAnimation { model.page = .settings }
-        unpinPanelFromEdge(panel)
-        panel.makeKeyAndOrderFront(nil)
-        app.activate(ignoringOtherApps: true)
+        forcePanelFront(panel)
     }
     NSAppleEventManager.shared().setEventHandler(
         URLOpener.shared,
