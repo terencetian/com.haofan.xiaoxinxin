@@ -168,7 +168,7 @@
 
   <div class="demo" aria-hidden="true">
     <div class="label">正在进账 · 今日已到账</div>
-    <div class="amount"><span id="amt">¥174.91</span><small id="cents">.73</small></div>
+    <div class="amount"><span id="amt">¥84.37</span><small id="cents">.50</small></div>
     <div class="bar"><i id="bar"></i></div>
     <div class="coins" id="coins">+¥0.01 +¥0.01 +¥0.01 +¥0.01 …</div>
   </div>
@@ -265,7 +265,7 @@
 (function(){
   var amt=document.getElementById('amt'),cents=document.getElementById('cents'),
       bar=document.getElementById('bar'),coins=document.getElementById('coins');
-  var start=17491+73, perSec=0.0165, t0=Date.now();
+  var start=8437+50, perSec=0.0058, t0=Date.now();
   function tick(){
     var v=start+(Date.now()-t0)/1000*perSec;
     var yuan=Math.floor(v/100), fen=Math.floor(v%100);
