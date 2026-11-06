@@ -13,7 +13,10 @@ INSTALL="/Applications/小薪薪.app"
 echo "[1/7] 准备 staging bundle（/tmp）"
 rm -rf "$STAGE_ROOT"
 mkdir -p "$STAGE/Contents/MacOS" "$STAGE/Contents/Resources" "$STAGE/Contents/PlugIns"
-cp "$SRC_APP/Contents/Info.plist" "$STAGE/Contents/Info.plist"
+# 版本号以仓库里的 AppInfo.plist 为准（*.app/ 被 gitignore，改在 bundle 里下次就找不到了）
+[ -f AppInfo.plist ] || { echo "✗ 缺 AppInfo.plist（版本号源）"; exit 1; }
+cp AppInfo.plist "$STAGE/Contents/Info.plist"
+cp AppInfo.plist "$SRC_APP/Contents/Info.plist"   # 同步回 bundle，两者不打架
 cp -R "$SRC_APP/Contents/Resources/." "$STAGE/Contents/Resources/"
 
 echo "[2/7] 编译小组件扩展（入口必须是 -e _NSExtensionMain，和 Xcode 对 appex 的设置一致）"

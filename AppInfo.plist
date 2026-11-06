@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>小薪薪</string>
+	<key>CFBundleExecutable</key>
+	<string>小薪薪</string>
+	<key>CFBundleGetInfoString</key>
+	<string>小薪薪 1.0 · 开发者 逍狗屁屁 · 让每一秒都看得见价值</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.haofan.xiaoxinxin</string>
+	<key>CFBundleName</key>
+	<string>小薪薪</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.9.4</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.haofan.xiaoxinxin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>xiaoxinxin</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>30</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 逍狗屁屁. All rights reserved.</string>
+	<key>XinXinDeveloper</key>
+	<string>逍狗屁屁</string>
+	<key>XinXinDeveloperTagline</key>
+	<string>让每一秒都看得见价值</string>
+</dict>
+</plist>
