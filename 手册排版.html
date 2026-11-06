@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>小薪薪 · 产品手册</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: #1d1d1f; -webkit-font-smoothing: antialiased;
+  }
+  :root {
+    --red: #d70015;
+    --red-soft: #fff1ef;
+    --gold: #ffb800;
+    --ink: #1d1d1f;
+    --gray: #6e6e73;
+    --line: #ececf0;
+  }
+  .page {
+    width: 210mm; height: 297mm; position: relative; overflow: hidden;
+    page-break-after: always; background: #fff;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  /* ============ 封面 ============ */
+  .cover { background: linear-gradient(150deg, #fff6e8 0%, #ffe9ec 55%, #ffe1e6 100%); }
+  .cover::before {
+    content: ""; position: absolute; width: 620px; height: 620px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,184,0,.5), rgba(255,184,0,0) 68%);
+    top: -240px; left: -180px;
+  }
+  .cover::after {
+    content: ""; position: absolute; width: 700px; height: 700px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(215,0,21,.28), rgba(215,0,21,0) 70%);
+    bottom: -320px; right: -220px;
+  }
+  .cover-inner { position: relative; padding: 46mm 22mm 0; z-index: 2; }
+  .appicon {
+    width: 118px; height: 118px; border-radius: 27px; display: block;
+    box-shadow: 0 18px 42px rgba(180,60,20,.32), 0 2px 0 rgba(255,255,255,.9) inset;
+  }
+  .cover h1 {
+    font-size: 66px; letter-spacing: -1.5px; margin-top: 30px; font-weight: 800;
+    color: #b00012; line-height: 1.06;
+  }
+  .cover .sub {
+    font-size: 21px; color: #6a4a3c; margin-top: 14px; font-weight: 600; letter-spacing: .4px;
+  }
+  .cover .desc {
+    font-size: 14.5px; line-height: 2; color: #7c5a4a; margin-top: 22px; max-width: 132mm;
+  }
+  .badges { margin-top: 34px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .badge {
+    background: rgba(255,255,255,.78); border: 1px solid rgba(215,0,21,.16);
+    color: #96202a; font-size: 12px; font-weight: 700; padding: 8px 16px; border-radius: 999px;
+    box-shadow: 0 4px 12px rgba(190,110,90,.12);
+  }
+  .cover-foot {
+    position: absolute; left: 22mm; right: 22mm; bottom: 22mm;
+    display: flex; justify-content: space-between; align-items: flex-end;
+    font-size: 11.5px; color: #9a7a6c; z-index: 2;
+  }
+  .cover-foot .ver { font-weight: 700; color: #b00012; font-size: 12.5px; }
+
+  /* ============ 通用页头 ============ */
+  .head { display: flex; align-items: baseline; gap: 12px; padding: 20mm 20mm 0; }
+  .head .no {
+    font-size: 13px; font-weight: 800; color: #fff; background: var(--red);
+    width: 26px; height: 26px; border-radius: 8px; display: flex; align-items: center;
+    justify-content: center; letter-spacing: .5px;
+  }
+  .head h2 { font-size: 26px; font-weight: 800; letter-spacing: -.4px; }
+  .head .en { font-size: 11px; color: #b2b2b8; letter-spacing: 2px; text-transform: uppercase; font-weight: 700; }
+  .head-line {
+    margin: 12mm 20mm 0; height: 1px; background: linear-gradient(90deg, var(--red), rgba(215,0,21,0));
+  }
+  .body { padding: 9mm 20mm 0; }
+
+  /* ============ 功能卡片 ============ */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9mm; }
+  .card {
+    border: 1px solid var(--line); border-radius: 16px; padding: 9mm 7mm 8mm;
+    background: linear-gradient(180deg, #fff, #fdfdff);
+  }
+  .card::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: linear-gradient(180deg, var(--gold), var(--red));
+    border-radius: 16px 0 0 16px;
+  }
+  .card .emo { font-size: 26px; line-height: 1; }
+  .card h3 { font-size: 16px; font-weight: 800; margin: 10px 0 7px; letter-spacing: -.2px; }
+  .card p { font-size: 12.2px; line-height: 1.85; color: var(--gray); }
+  .card .tag {
+    display: inline-block; margin-top: 9px; font-size: 10.5px; font-weight: 700;
+    color: var(--red); background: var(--red-soft); padding: 4px 10px; border-radius: 999px;
+  }
+
+  /* ============ 截图区 ============ */
+  .shot-wrap { display: flex; gap: 9mm; align-items: flex-start; }
+  .shot {
+    border-radius: 20px; overflow: hidden; flex: 0 0 auto;
+    border: 1px solid #f0e4e0;
+  }
+  .shot img { display: block; width: 100%; }
+  .shot-main { width: 118mm; }
+  .shot-side { width: 66mm; }
+  .points { flex: 1; padding-top: 2mm; }
+  .point { display: flex; gap: 10px; margin-bottom: 6.5mm; }
+  .point .n {
+    flex: 0 0 auto; width: 20px; height: 20px; border-radius: 7px; background: var(--red);
+    color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center;
+    justify-content: center; margin-top: 1px;
+  }
+  .point h4 { font-size: 13.2px; font-weight: 800; margin-bottom: 3px; }
+  .point p { font-size: 11.6px; line-height: 1.8; color: var(--gray); }
+
+  /* ============ 公式块 ============ */
+  .formula {
+    margin-top: 7mm; background: #1d1d1f; border-radius: 16px; padding: 7mm 7mm;
+    color: #f5f5f7; font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  .formula .label { font-size: 10.5px; letter-spacing: 2px; color: #ff8f87; font-weight: 700; margin-bottom: 9px; }
+  .formula .line { font-size: 13px; line-height: 2.05; }
+  .formula .hl { color: #ffd166; font-weight: 700; }
+  .formula .note { font-family: "PingFang SC", sans-serif; font-size: 11px; color: #a1a1a6; margin-top: 8px; line-height: 1.8; }
+
+  /* ============ 安装步骤 ============ */
+  .steps { display: flex; gap: 5mm; margin-top: 6mm; }
+  .step {
+    flex: 1; border: 1px dashed #e3c9c2; border-radius: 14px; padding: 5.5mm;
+    background: #fffaf7;
+  }
+  .step .k { font-size: 11px; font-weight: 800; color: var(--gold); letter-spacing: 1px; }
+  .step h4 { font-size: 13px; font-weight: 800; margin: 6px 0 5px; }
+  .step p { font-size: 11px; line-height: 1.75; color: var(--gray); }
+
+  /* ============ 尾页 ============ */
+  .end {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 10mm 20mm 16mm;
+    background: linear-gradient(180deg, rgba(255,255,255,0), #fff5f3 40%);
+    text-align: center;
+  }
+  .end .big { font-size: 20px; font-weight: 800; color: #b00012; letter-spacing: -.3px; }
+  .end .sm { font-size: 11.5px; color: #9a8b86; margin-top: 7px; }
+
+  /* ============ 水印：半透明玻璃 ============ */
+  /* 底层：极淡的斜向重复字纹 */
+  .wm-tile {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    z-index: 8; pointer-events: none;
+  }
+
+  /* 上层：玻璃胶囊署名 */
+  .wm {
+    position: absolute; z-index: 9; pointer-events: none;
+    display: flex; align-items: center; gap: 2.4mm;
+    padding: 3.2mm 6.5mm; border-radius: 999px;
+    transform: rotate(-13deg);
+    background: linear-gradient(135deg,
+      rgba(255,255,255,.68) 0%,
+      rgba(255,255,255,.28) 45%,
+      rgba(255,255,255,.52) 100%);
+    border: 1px solid rgba(255,255,255,.9);
+    box-shadow:
+      inset 0 1px 1.5px rgba(255,255,255,.95),
+      inset 0 -1px 2px rgba(215,0,21,.06),
+      0 3px 14px rgba(150,80,60,.10);
+    -webkit-backdrop-filter: blur(7px) saturate(165%);
+    backdrop-filter: blur(7px) saturate(165%);
+  }
+  /* 玻璃斜向反光 */
+  .wm::after {
+    content: ""; position: absolute; inset: 0; z-index: 0; border-radius: 999px;
+    background: linear-gradient(114deg,
+      rgba(255,255,255,0) 28%,
+      rgba(255,255,255,.62) 44%,
+      rgba(255,255,255,0) 58%);
+    opacity: .75;
+  }
+  .wm > * { position: relative; z-index: 1; }
+  .wm .dot {
+    width: 1.5mm; height: 1.5mm; border-radius: 50%;
+    background: rgba(215,0,21,.42);
+    box-shadow: 0 0 3px rgba(215,0,21,.35);
+  }
+  .wm .name {
+    font-size: 12.5px; font-weight: 800; letter-spacing: .28em; padding-left: .28em;
+    color: rgba(150,10,22,.44);
+    text-shadow: 0 1px 0 rgba(255,255,255,.95);
+  }
+  .wm .role {
+    font-size: 7.5px; font-weight: 800; letter-spacing: .18em;
+    color: rgba(120,92,82,.40);
+    text-shadow: 0 1px 0 rgba(255,255,255,.9);
+  }
+</style>
+</head>
+<body>
+
+<!-- 水印字纹 pattern（全局定义一次） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <pattern id="wmPat" width="72" height="46" patternUnits="userSpaceOnUse" patternTransform="rotate(-24)">
+      <text x="2" y="20" font-family="PingFang SC, Hiragino Sans GB, sans-serif" font-size="4.6"
+            font-weight="700" letter-spacing="1.6" fill="rgba(215,0,21,0.062)">逍狗屁屁</text>
+      <text x="34" y="38" font-family="PingFang SC, Hiragino Sans GB, sans-serif" font-size="4.6"
+            font-weight="700" letter-spacing="1.6" fill="rgba(215,0,21,0.045)">逍狗屁屁</text>
+    </pattern>
+  </defs>
+</svg>
+
+<!-- ================= P1 封面 ================= -->
+<section class="page cover">
+  <svg class="wm-tile" viewBox="0 0 210 297" preserveAspectRatio="none"><rect width="210" height="297" fill="url(#wmPat)"/></svg>
+  <div class="wm" style="right:15mm; bottom:58mm;">
+    <span class="dot"></span><span class="name">逍狗屁屁</span><span class="role">DEVELOPER</span>
+  </div>
+
+  <div class="cover-inner">
+    <img class="appicon" src="assets/AppIcon-1024.png" alt="小薪薪">
+    <h1>小薪薪</h1>
+    <div class="sub">把月薪拆到每一秒，看着钱一格一格进账</div>
+    <div class="desc">
+      一枚常驻桌面的悬浮小窗。打卡上班后，今日已到账金额实时滚动，
+      金币压在进度条前端一路向前——每攒满一分钱，屏幕上就飘出一枚 <b>+¥0.01</b>。
+    </div>
+    <div class="badges">
+      <span class="badge">macOS 悬浮窗</span>
+      <span class="badge">自动上下班</span>
+      <span class="badge">桌面小组件</span>
+      <span class="badge">加班计费</span>
+      <span class="badge">流水明细</span>
+      <span class="badge">完全离线</span>
+    </div>
+  </div>
+  <div class="cover-foot">
+    <div>
+      <div class="ver">产品手册 v1.9.3</div>
+      <div style="margin-top:4px;">适用于 小薪薪 1.9.3 · macOS 13 及以上</div>
+    </div>
+    <div style="text-align:right;">
+      让每一秒<br>都看得见价值
+    </div>
+  </div>
+</section>
+
+<!-- ================= P2 核心功能 ================= -->
+<section class="page">
+  <svg class="wm-tile" viewBox="0 0 210 297" preserveAspectRatio="none"><rect width="210" height="297" fill="url(#wmPat)"/></svg>
+  <div class="wm" style="right:15mm; bottom:15mm;">
+    <span class="dot"></span><span class="name">逍狗屁屁</span><span class="role">DEVELOPER</span>
+  </div>
+
+  <div class="head">
+    <div class="no">01</div>
+    <div>
+      <h2>核心功能</h2>
+      <div class="en">Core Features</div>
+    </div>
+  </div>
+  <div class="head-line"></div>
+  <div class="body">
+    <div class="grid">
+      <div class="card">
+        <div class="emo">🕐</div>
+        <h3>打卡即进账</h3>
+        <p>点「打卡上班」开始按秒累计，金额实时滚动；「打卡下班」停止结算。基于真实时间戳，切到后台也不少算。</p>
+        <span class="tag">上班 / 下班双按钮互斥</span>
+      </div>
+      <div class="card">
+        <div class="emo">⏰</div>
+        <h3>到点自动上下班</h3>
+        <p>上班时间一到自动开始计费，下班时刻自动停表，两个开关各自独立。错过整点从中途起算，不白送工时；手动打过卡的班次不会被重复打开。</p>
+        <span class="tag">配合开机自启 · 开机即计费</span>
+      </div>
+      <div class="card">
+        <div class="emo">🌙</div>
+        <h3>加班继续计费</h3>
+        <p>下班后接着干、或过了点才打卡，都按原费率继续进账；标题栏亮起橙色「加班中」，一眼看出这段是加班。</p>
+        <span class="tag">按原费率 · 不翻倍不打折</span>
+      </div>
+      <div class="card">
+        <div class="emo">📈</div>
+        <h3>本月累计两枚芯片</h3>
+        <p>首页常驻「本月累计进账」与「本月加班时长」，今日实时叠加历史流水，点开能看构成。</p>
+        <span class="tag">跨天自动落账</span>
+      </div>
+      <div class="card">
+        <div class="emo">📋</div>
+        <h3>流水明细可查可改</h3>
+        <p>设置页按日期范围查询每天的进账与加班，单条删除、手动补记忘记打卡的日子，只留最近两个月。</p>
+        <span class="tag">今日金额以实时打卡为准</span>
+      </div>
+      <div class="card">
+        <div class="emo">💵</div>
+        <h3>状态栏 · 小组件 · Dock</h3>
+        <p>菜单栏常驻钞票图标，可显示实时金额；桌面小组件小中大三种尺寸，秒级实时走数；Dock 有图标、进 ⌘Tab，不会被当成后台偷跑。</p>
+        <span class="tag">窗口拖到边缘即收纳</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= P3 首页 ================= -->
+<section class="page">
+  <svg class="wm-tile" viewBox="0 0 210 297" preserveAspectRatio="none"><rect width="210" height="297" fill="url(#wmPat)"/></svg>
+  <div class="wm" style="right:14mm; bottom:14mm;">
+    <span class="dot"></span><span class="name">逍狗屁屁</span><span class="role">DEVELOPER</span>
+  </div>
+
+  <div class="head">
+    <div class="no">02</div>
+    <div>
+      <h2>首页 · 实时进账</h2>
+      <div class="en">Home View</div>
+    </div>
+  </div>
+  <div class="head-line"></div>
+  <div class="body">
+    <div class="shot-wrap">
+      <div class="shot shot-main"><img src="screenshots/home.png" alt="首页"></div>
+      <div class="points">
+        <div class="point">
+          <div class="n">1</div>
+          <div>
+            <h4>今日已到账</h4>
+            <p>大号喜庆红数字实时滚动，精确到分；每攒满 1 分钱飘出一枚 +¥0.01。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">2</div>
+          <div>
+            <h4>金币进度条</h4>
+            <p>图标骑在进度条上前进，下方标注「今日进度 31.7% · 距离全天还差 ¥113.90」。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">3</div>
+          <div>
+            <h4>六块明细 + 两枚月度芯片</h4>
+            <p>月薪、工作日、日薪、时薪、每秒进账、今日已工作；下面再挂本月累计进账与本月加班时长。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">4</div>
+          <div>
+            <h4>打卡互斥与加班标识</h4>
+            <p>计费中上班键置灰、下班键点亮，永远不会两个都能点；过点继续计时时标题亮起橙色「加班中」。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">5</div>
+          <div>
+            <h4>右上角三键</h4>
+            <p>➖ 收起为迷你条 · ⚙️ 进设置页 · ✕ 收纳到状态栏（默认，可在设置里改为直接退出）。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">6</div>
+          <div>
+            <h4>日志行</h4>
+            <p>显示最近一次打卡、工时校正与费率变更记录，点一下就在这一行确认刚才发生了什么。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= P4 设置页 + 迷你模式 ================= -->
+<section class="page">
+  <svg class="wm-tile" viewBox="0 0 210 297" preserveAspectRatio="none"><rect width="210" height="297" fill="url(#wmPat)"/></svg>
+  <div class="wm" style="right:14mm; bottom:14mm;">
+    <span class="dot"></span><span class="name">逍狗屁屁</span><span class="role">DEVELOPER</span>
+  </div>
+
+  <div class="head">
+    <div class="no">03</div>
+    <div>
+      <h2>设置与迷你形态</h2>
+      <div class="en">Settings &amp; Mini Mode</div>
+    </div>
+  </div>
+  <div class="head-line"></div>
+  <div class="body">
+    <div class="shot-wrap">
+      <div class="shot shot-side"><img src="manual-assets/settings.png" alt="设置页"></div>
+      <div class="points">
+        <div class="point">
+          <div class="n">1</div>
+          <div>
+            <h4>六个折叠分组</h4>
+            <p>薪酬与工作天数 / 工作时间·自动下班 / 工时校正 / 外观与图标 / 窗口行为 / 流水明细，点标题展开收起，右上角一键全展开或全折叠，窗口高度跟着走。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">2</div>
+          <div>
+            <h4>薪酬与工作日</h4>
+            <p>填每月税后工资；工作日默认为法定节假日推算值（本月自动 21 天），可手改、也可一键恢复自动。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">3</div>
+          <div>
+            <h4>工作时间 · 自动下班</h4>
+            <p>上下班时间 + 休息分钟，右侧实时显示「= 8.0 小时/天」；「自动下班」开关控制到点是否自动停表，开启后过点再计即为加班。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">4</div>
+          <div>
+            <h4>校正工时</h4>
+            <p>输入今天实际总工时（如 5.5）点「✓ 校正」，记多了核减、记少了补记，右侧实时显示当前已计小时。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="shot-wrap" style="margin-top:9mm; align-items:center;">
+      <div class="shot" style="width:96mm;"><img src="screenshots/mini.png" alt="迷你模式"></div>
+      <div class="points">
+        <div class="point">
+          <div class="n">5</div>
+          <div>
+            <h4>迷你胶囊</h4>
+            <p>首页点 ➖ 收起为 330×90 小胶囊：图标 + 进度条 + 实时金额，点击任意处展开。计费从不中断。</p>
+          </div>
+        </div>
+        <div class="point">
+          <div class="n">6</div>
+          <div>
+            <h4>流水明细</h4>
+            <p>按日期范围查询每天的进账与加班，单条删除或手动补记；今日以实时打卡为准。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= P5 规则 + 安装 ================= -->
+<section class="page">
+  <svg class="wm-tile" viewBox="0 0 210 297" preserveAspectRatio="none"><rect width="210" height="297" fill="url(#wmPat)"/></svg>
+  <div class="wm" style="right:12mm; bottom:26mm;">
+    <span class="dot"></span><span class="name">逍狗屁屁</span><span class="role">DEVELOPER</span>
+  </div>
+
+  <div class="head">
+    <div class="no">04</div>
+    <div>
+      <h2>计费规则与安装</h2>
+      <div class="en">Formula &amp; Install</div>
+    </div>
+  </div>
+  <div class="head-line"></div>
+  <div class="body">
+    <div class="formula">
+      <div class="label">CALCULATION</div>
+      <div class="line">每秒进账 = <span class="hl">月薪 ÷ 每月工作日 ÷ 实际工时 ÷ 3600</span></div>
+      <div class="line">实际工时 = <span class="hl">下班时间 − 上班时间 − 休息时长</span></div>
+      <div class="line">今日进度 = <span class="hl">今日已到账 ÷ 日薪</span>　（日薪 = 月薪 ÷ 每月工作日）</div>
+      <div class="note">示例：月薪 ¥3,500、21 个工作日、每天 8 小时 → 每秒约 ¥0.0058，日薪 ¥166.67。</div>
+    </div>
+
+    <div style="margin-top:9mm; font-size:12px; line-height:1.95; color:#6e6e73;">
+      · 修改月薪或工时后，当前计费段从修改时刻按新费率重新起算，不会重复计算；<br>
+      · 上班中途退出 App，重新打开会<b>继续按原打卡时间计费</b>，不少算；<br>
+      · <b>自动下班</b>：本段计费开始于计划下班之前、且已过下班时刻，自动帮你打卡下班；<br>
+      · <b>加班</b>：过点后再打卡或自动下班后继续计时，按原费率继续进账，单独累计加班时长；<br>
+      · 所有数据保存在本机，App 不联网、不上传，换设备不同步。
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="k">STEP 1</div>
+        <h4>挂载镜像</h4>
+        <p>双击 小薪薪.dmg，弹出安装窗口。</p>
+      </div>
+      <div class="step">
+        <div class="k">STEP 2</div>
+        <h4>拖进 Applications</h4>
+        <p>把小薪薪.app 拖到「应用程序」文件夹，完成安装。</p>
+      </div>
+      <div class="step">
+        <div class="k">STEP 3</div>
+        <h4>首次放行</h4>
+        <p>首次打开若被拦截：右键 → 打开，或到「系统设置 → 隐私与安全性」点仍要打开，仅一次。</p>
+      </div>
+    </div>
+
+    <div style="margin-top:10mm; border:1px solid var(--line); border-radius:16px; padding:7mm; background:#fdfdff;">
+      <div style="font-size:13px; font-weight:800; margin-bottom:6px;">小贴士</div>
+      <div style="font-size:11.8px; line-height:1.95; color:#6e6e73;">
+        菜单栏图标 <b>单击</b>显示/隐藏小窗，<b>双指点按</b>打开完整菜单（薪酬、工作日、打卡、放大缩小、缩小至状态栏、退出）。
+        收纳到状态栏后，图标本身会变成一条迷你进度条 + 实时金额，瞄一眼就知道今天赚了多少。
+        每天第一次跨天时，昨日进账与加班会自动落进流水，首页两枚月度芯片随之增长。
+      </div>
+    </div>
+  </div>
+
+  <div class="end">
+    <div class="big">小薪薪 · 让每一秒都看得见价值</div>
+    <div class="sm">产品手册 v1.9.3 · 2026 年 11 月</div>
+  </div>
+</section>
+
+</body>
+</html>
