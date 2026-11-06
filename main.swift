@@ -9,6 +9,7 @@ import AppKit
 import UniformTypeIdentifiers
 import WidgetKit
 import Network
+import ServiceManagement
 
 // MARK: - 小组件数据桥（本机回环 HTTP）
 // 沙盒扩展既读不到真实家目录、也读不到别的 App 的偏好（ad-hoc 签名下临时豁免不生效），
@@ -124,10 +125,14 @@ final class EarnModel: ObservableObject {
     @Published var closeBehavior: String     // 点击关闭按钮时："hide"=收纳到状态栏，"quit"=直接退出
     @Published var barSymbol: String         // 状态栏金额前缀符号/emoji，可自定义（空=只显示数字）
     @Published var autoOutEnabled: Bool      // 到点自动下班：到计划下班时刻自动打卡下班
+    @Published var autoInEnabled: Bool       // 到点自动上班：到计划上班时刻自动打卡上班
+    @Published var launchAtLogin: Bool       // 开机自动启动（登录项）
+    @Published var launchAtLoginError: String?
     @Published var overtimeSeconds: Double = 0   // 今日加班累计秒数（自动下班后/过了下班时间再打卡的时段）
     @Published var dayLogRevision = 0        // 流水增删计数：驱动本月累计芯片刷新
 
     private var dayKey = ""                  // 当前计费日 yyyy-MM-dd，用于跨天自动重置
+    private var autoInKey = ""               // 已自动打过卡的班次标识，同一班次只自动打一次
     private var dayLog: [String: [String: Double]] = [:]   // 历史流水：dateKey -> ["earned": 当日到账, "ot": 当日加班秒]
 
     var onResize: (() -> Void)?
@@ -231,6 +236,10 @@ final class EarnModel: ObservableObject {
     var scheduledEnd: Date? {
         shiftEndTime(now: Date.now, startStr: workStartText, endStr: workEndText)
     }
+    // 当前班次的计划上班时刻（跨零点班次的凌晨时段落到前一天）
+    var scheduledStart: Date? {
+        shiftStartTime(now: Date.now, startStr: workStartText, endStr: workEndText)
+    }
     // 加班中：当前计费段是在计划下班之后打卡的
     var overtimeNow: Bool {
         guard working, let s = clockInAt, let end = scheduledEnd else { return false }
@@ -276,6 +285,9 @@ final class EarnModel: ObservableObject {
         }
         if let saved = ud.object(forKey: "clockInAt") as? Date { clockInAt = saved }
         autoOutEnabled = ud.object(forKey: "autoOut") == nil ? true : ud.bool(forKey: "autoOut")
+        autoInEnabled = ud.object(forKey: "autoIn") == nil ? true : ud.bool(forKey: "autoIn")
+        launchAtLogin = LaunchAtLogin.isEnabled
+        autoInKey = ud.string(forKey: "autoInKey") ?? ""
         overtimeSeconds = ud.double(forKey: "overtimeSeconds")
         if let raw = ud.dictionary(forKey: "dayLog") as? [String: [String: NSNumber]] {
             dayLog = raw.mapValues { ["earned": $0["earned"]?.doubleValue ?? 0, "ot": $0["ot"]?.doubleValue ?? 0] }
@@ -345,6 +357,7 @@ final class EarnModel: ObservableObject {
 
     func tick() {
         checkDayRollover()
+        autoClockInIfNeeded()
         autoClockOutIfNeeded()
         guard working, let start = clockInAt else { return }
         displayEarned = baseEarned + Date.now.timeIntervalSince(start) * ratePerSec
@@ -368,10 +381,15 @@ final class EarnModel: ObservableObject {
         }
     }
 
-    func clockIn() {
-        clockInAt = Date.now
+    func clockIn(at when: Date = .now) {
+        clockInAt = when
         lastGainMark = baseEarned
         working = true
+        // 手动打卡同样占掉本班次的自动打坑位：手动打过又手动下班后，不会到点又被自动打开
+        if let s = shiftStartTime(now: when, startStr: workStartText, endStr: workEndText) {
+            autoInKey = shiftKey(s)
+            ud.set(autoInKey, forKey: "autoInKey")
+        }
         if overtimeNow {
             logText = "🌙 \(timeStr(clockInAt!)) 加班打卡，已过下班时间，按原费率继续计费"
         } else {
@@ -468,6 +486,26 @@ final class EarnModel: ObservableObject {
     private func autoClockOutIfNeeded() {
         guard autoOutEnabled, working, let s = clockInAt, let end = scheduledEnd else { return }
         if s < end && Date.now >= end { clockOut(auto: true) }
+    }
+
+    // 到点自动上班：进入班次窗口且本班次还没自动打过卡 → 自动打卡上班。
+    // 判据比自动下班严格一层——必须在 [计划上班, 计划下班) 之内，下班之后不会被自动打开。
+    private func autoClockInIfNeeded() {
+        guard autoInEnabled, !working,
+              let start = scheduledStart, let end = scheduledEnd else { return }
+        let now = Date.now
+        guard now >= start, now < end else { return }        // 未到上班时间 / 已过下班时间
+        let key = shiftKey(start)
+        guard autoInKey != key else { return }               // 本班次已自动打过（含跨零点前后半夜）
+        autoInKey = key
+        ud.set(autoInKey, forKey: "autoInKey")
+        // 刚好到点（2 分钟内）从上班时刻起算；开机晚了则从当前时刻起算，不白送工时
+        let lateBy = now.timeIntervalSince(start)
+        let origin = lateBy <= 120 ? start : now
+        clockIn(at: origin)
+        logText = lateBy <= 120
+            ? "🌅 \(timeStr(origin)) 已到上班时间，自动打卡上班"
+            : "🌅 \(timeStr(origin)) 自动打卡上班（已过上班时间，从中途起算）"
     }
 
     // —— 以下仅供 --sim-autoout 自检使用，不影响正常功能 ——
@@ -582,6 +620,114 @@ final class EarnModel: ObservableObject {
 
     func onAutoOutChanged() {
         ud.set(autoOutEnabled, forKey: "autoOut")
+    }
+
+    func onAutoInChanged() {
+        ud.set(autoInEnabled, forKey: "autoIn")
+    }
+
+    // 开机自启动：开关状态以系统真实状态为准，写失败时回滚 UI 并给出提示
+    @discardableResult
+    func onLaunchAtLoginChanged() -> String? {
+        let want = launchAtLogin
+        let err = LaunchAtLogin.setEnabled(want)
+        launchAtLogin = LaunchAtLogin.isEnabled
+        ud.set(launchAtLogin, forKey: "launchAtLoginWanted")   // 只作为「用户意愿」记录
+        return err
+    }
+}
+
+// MARK: - 开机自启动
+//
+// 优先用 macOS 13+ 的 SMAppService（正规登录项，用户能在「系统设置 → 通用 → 登录项」里看到并管理）。
+// 本机是自签名证书（非 Developer ID），系统可能拒绝注册，失败则回退到 LaunchAgents plist。
+// 两条路的实际效果一致：登录后静默启动，带 --autostart 参数直接进状态栏，不弹主窗。
+enum LaunchAtLogin {
+    static let label = "com.haofan.xiaoxinxin.autostart"
+
+    static var plistURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/\(label).plist")
+    }
+
+    /// 已注册但用户还没在系统设置里允许
+    static var needsApproval: Bool {
+        if #available(macOS 13.0, *) { return SMAppService.mainApp.status == .requiresApproval }
+        return false
+    }
+
+    static var isEnabled: Bool {
+        if #available(macOS 13.0, *), SMAppService.mainApp.status == .enabled { return true }
+        return FileManager.default.fileExists(atPath: plistURL.path)
+    }
+
+    /// 返回 nil 表示成功，否则为给用户看的错误文案
+    static func setEnabled(_ on: Bool) -> String? {
+        if #available(macOS 13.0, *) {
+            do {
+                if on {
+                    if SMAppService.mainApp.status != .enabled { try SMAppService.mainApp.register() }
+                } else {
+                    if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
+                }
+                removeLegacyPlist()          // 清掉历史残留，避免两套机制同时生效
+                return nil
+            } catch {
+                // 自签名 App 被系统拒绝时走 LaunchAgent，功能等价
+                return legacySetEnabled(on)
+            }
+        }
+        return legacySetEnabled(on)
+    }
+
+    private static func legacySetEnabled(_ on: Bool) -> String? {
+        if on {
+            let dir = plistURL.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let dict: [String: Any] = [
+                "Label": label,
+                // 用 open 拉起完整 bundle，等价于用户双击；-g 表示不抢前台，登录后不打断用户
+                "ProgramArguments": ["/usr/bin/open", "-g", "-a", Bundle.main.bundlePath, "--args", "--autostart"],
+                "RunAtLoad": true,
+                "ProcessType": "Interactive",
+                "LimitLoadToSessionType": "Aqua",
+            ]
+            guard let data = try? PropertyListSerialization.data(
+                fromPropertyList: dict, format: .xml, options: 0) else {
+                return "生成登录项配置失败"
+            }
+            do {
+                try data.write(to: plistURL)
+            } catch {
+                return "写入登录项失败：\(error.localizedDescription)"
+            }
+            _ = launchctl(["bootout", "gui/\(getuid())", plistURL.path])   // 先卸旧的，报错忽略
+            let code = launchctl(["bootstrap", "gui/\(getuid())", plistURL.path])
+            // 5 = 已在加载中，属于正常情况
+            return (code == 0 || code == 5) ? nil : "注册登录项失败（launchctl \(code)）"
+        } else {
+            _ = launchctl(["bootout", "gui/\(getuid())", plistURL.path])
+            try? FileManager.default.removeItem(at: plistURL)
+            return nil
+        }
+    }
+
+    private static func removeLegacyPlist() {
+        guard FileManager.default.fileExists(atPath: plistURL.path) else { return }
+        _ = launchctl(["bootout", "gui/\(getuid())", plistURL.path])
+        try? FileManager.default.removeItem(at: plistURL)
+    }
+
+    @discardableResult
+    private static func launchctl(_ args: [String]) -> Int32 {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        p.arguments = args
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do { try p.run() } catch { return -1 }
+        p.waitUntilExit()
+        return p.terminationStatus
     }
 }
 
@@ -1066,8 +1212,8 @@ struct SettingsView: View {
                     caption("本月按 2026 国办法定节假日自动计算为 \(model.autoDays) 天（已扣节假日、含调休补班）。清空即恢复自动。")
                 }
 
-                // MARK: ⏰ 工作时间 · 自动下班
-                group("time", icon: "⏰", title: "工作时间 · 自动下班",
+                // MARK: ⏰ 工作时间 · 自动打卡
+                group("time", icon: "⏰", title: "工作时间 · 自动打卡",
                       summary: "\(model.workStartText)–\(model.workEndText) · \(String(format: "%.1f", model.effectiveHours))h") {
                     fieldLabel("每日工作时长", trailing: String(format: "= %.1f 小时/天", model.effectiveHours))
                     // 两行排布：一行放三个输入框会超出卡片内宽，被压缩后看着就是“变形”
@@ -1085,28 +1231,25 @@ struct SettingsView: View {
 
                     caption("实际计费工时 = 下班 − 上班 − 休息，默认 09:00–18:00 休 60 分钟即 8 小时。费率 = 月薪 ÷ 工作日 ÷ 实际工时。支持跨零点（如 22:00–06:00）。")
 
-                    fieldLabel("自动下班", trailing: model.autoOutEnabled ? "已开启" : "已关闭")
-                    HStack(spacing: 10) {
-                        Image(systemName: model.autoOutEnabled ? "alarm.waves.left.and.right.fill" : "moon.zzz")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(model.autoOutEnabled ? redDeep : .secondary)
-                            .frame(width: 20)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("到下班时间自动打卡").font(.system(size: 12, weight: .semibold))
-                            Text("自动下班后再打卡计为加班，首页显示「加班中」")
-                                .font(.system(size: 10.5)).foregroundStyle(.secondary)
-                                .lineLimit(nil)
-                                .fixedSize(horizontal: false, vertical: true)
+                    fieldLabel("自动打卡", trailing: model.autoInEnabled && model.autoOutEnabled ? "上下班都自动"
+                                                    : (model.autoInEnabled ? "仅自动上班"
+                                                       : (model.autoOutEnabled ? "仅自动下班" : "均已关闭")))
+                    VStack(spacing: 6) {
+                        switchRow(icon: model.autoInEnabled ? "sunrise.fill" : "sunrise",
+                                  on: model.autoInEnabled,
+                                  title: "到上班时间自动打卡",
+                                  detail: "进入工作时间后自动开始计费；错过整点启动则从中途起算，不白送工时",
+                                  binding: $model.autoInEnabled) {
+                            model.onAutoInChanged()
                         }
-                        Spacer()
-                        Toggle("", isOn: $model.autoOutEnabled)
-                            .labelsHidden().toggleStyle(.switch).controlSize(.mini)
-                            .onChange(of: model.autoOutEnabled) { _ in model.onAutoOutChanged() }
+                        switchRow(icon: model.autoOutEnabled ? "alarm.waves.left.and.right.fill" : "moon.zzz",
+                                  on: model.autoOutEnabled,
+                                  title: "到下班时间自动打卡",
+                                  detail: "自动下班后再打卡计为加班，首页显示「加班中」",
+                                  binding: $model.autoOutEnabled) {
+                            model.onAutoOutChanged()
+                        }
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 9)
-                    .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Glass.fill(0.24)))
-                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .strokeBorder(Glass.line(0.5), lineWidth: 1))
                 }
 
                 // MARK: ⏱ 工时校正
@@ -1212,14 +1355,30 @@ struct SettingsView: View {
                 }
 
                 // MARK: 🪟 窗口行为
-                group("window", icon: "🪟", title: "窗口行为",
-                      summary: model.closeBehavior == "quit" ? "关闭=退出" : "关闭=收纳状态栏") {
+                group("window", icon: "🪟", title: "窗口与启动",
+                      summary: (model.closeBehavior == "quit" ? "关闭=退出" : "关闭=收纳状态栏")
+                               + (model.launchAtLogin ? " · 开机启动" : "")) {
                     fieldLabel("点击关闭按钮时")
                     HStack(spacing: 8) {
                         closeOption("收纳到状态栏", value: "hide", icon: "dock.rectangle")
                         closeOption("直接退出", value: "quit", icon: "power")
                     }
                     caption("收纳到状态栏：小窗隐藏，状态栏图标继续显示金额与进度，点击随时恢复。直接退出：结束 App，今日累计会保留到下次打开。")
+
+                    fieldLabel("开机自启动", trailing: model.launchAtLogin ? "已开启" : "已关闭")
+                    switchRow(icon: model.launchAtLogin ? "power.circle.fill" : "power.circle",
+                              on: model.launchAtLogin,
+                              title: "登录后自动启动",
+                              detail: "开机登录时静默启动并停在状态栏，不弹主窗；关掉不影响当前这次运行",
+                              binding: $model.launchAtLogin) {
+                        model.launchAtLoginError = model.onLaunchAtLoginChanged()
+                    }
+                    if let err = model.launchAtLoginError {
+                        warnLine("⚠️ " + err)
+                    } else if LaunchAtLogin.needsApproval {
+                        warnLine("⚠️ 登录项已登记，还需到「系统设置 → 通用 → 登录项」允许小薪薪。")
+                    }
+                    caption("配合「工作时间 · 自动打卡」可实现开机后到点自动开始计费，不用每天手动点打卡。")
                 }
 
                 // MARK: 📋 流水明细
@@ -1413,6 +1572,43 @@ struct SettingsView: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 6)
+    }
+
+    // 组内警示行：开关写入失败 / 需要用户去系统设置放行
+    private func warnLine(_ s: String) -> some View {
+        Text(s)
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(redDeep)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 6)
+    }
+
+    // 开关行：图标 + 标题 + 说明 + 右侧小开关（自动上班/自动下班/开机自启动共用）
+    private func switchRow(icon: String, on: Bool, title: String, detail: String,
+                           binding: Binding<Bool>, onChange: @escaping () -> Void) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(on ? redDeep : .secondary)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .semibold))
+                Text(detail)
+                    .font(.system(size: 10.5)).foregroundStyle(.secondary)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Toggle("", isOn: binding)
+                .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                .onChange(of: binding.wrappedValue) { _ in onChange() }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Glass.fill(0.24)))
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+            .strokeBorder(Glass.line(0.5), lineWidth: 1))
     }
 
 
@@ -2063,17 +2259,76 @@ func runSimAutoout(_ model: EarnModel) {    model.salaryText = "21000"
     print("SIM6| 删除后剩余: \(model.dayLogRows(start: "", end: "").count) 条")
 }
 
+// 自检：--sim-autoin 验证自动打卡上班
+// 场景1：上班时刻刚过 60 秒 → 从上班时刻起算（已计约 1 分钟）
+// 场景2：连续 tick 不得重复打卡
+// 场景3：关掉开关并下班后，tick 不得被自动打开
+// 场景4：上班时刻已过 1 小时 → 从中途（当前时刻）起算，不白送工时
+@MainActor
+func runSimAutoin(_ model: EarnModel) {
+    model.salaryText = "21000"
+    model.workStartText = timeStr(Date.now.addingTimeInterval(-60))
+    model.workEndText = timeStr(Date.now.addingTimeInterval(4 * 3600))
+    model.autoInEnabled = true
+    model.autoOutEnabled = true
+
+    model.tick()
+    print("AUTOIN1| 到点自动上班 working=\(model.working) 已计=\(String(format: "%.3f", model.totalWorkedHours))h 到账=\(fmt(model.displayEarned))")
+    print("AUTOIN1| log=[\(model.logText)]")
+
+    let h1 = model.totalWorkedHours
+    model.tick()
+    print("AUTOIN2| 连续 tick 不重打 增量=\(String(format: "%.4f", model.totalWorkedHours - h1))h working=\(model.working)")
+
+    model.autoInEnabled = false
+    model.clockOut()
+    model.tick()
+    print("AUTOIN3| 开关关闭且已下班 → 不再自动打 working=\(model.working)")
+
+    // 场景4：换一个「1 小时前就该上班」的新域，验证补打从中途起算
+    let ud2 = UserDefaults(suiteName: "xiaoxinxin-sim-late")!
+    ["salary", "working", "baseEarned", "clockInAt", "autoInKey", "workedBeforeSession",
+     "overtimeSeconds", "dayKey", "dayLog"].forEach { ud2.removeObject(forKey: $0) }
+    let late = EarnModel(ud: ud2)
+    late.salaryText = "21000"
+    late.workStartText = timeStr(Date.now.addingTimeInterval(-3600))
+    late.workEndText = timeStr(Date.now.addingTimeInterval(3600))
+    late.autoInEnabled = true
+    late.tick()
+    print("AUTOIN4| 晚到补打 已计=\(String(format: "%.3f", late.totalWorkedHours))h（应接近 0，不白送）working=\(late.working)")
+    print("AUTOIN4| log=[\(late.logText)]")
+
+    // 场景5（关键）：开关开着，用户手动打卡后又手动下班（早退）→ tick 不得再自动打开
+    let ud3 = UserDefaults(suiteName: "xiaoxinxin-sim-manual")!
+    ["salary", "working", "baseEarned", "clockInAt", "autoInKey", "workedBeforeSession",
+     "overtimeSeconds", "dayKey", "dayLog"].forEach { ud3.removeObject(forKey: $0) }
+    let manual = EarnModel(ud: ud3)
+    manual.salaryText = "21000"
+    manual.workStartText = timeStr(Date.now.addingTimeInterval(-60))
+    manual.workEndText = timeStr(Date.now.addingTimeInterval(4 * 3600))
+    manual.autoInEnabled = true
+    manual.tick()               // 自动打上
+    manual.clockOut()           // 用户手动下班
+    manual.tick()
+    print("AUTOIN5| 手动下班后不重打 working=\(manual.working)（应为 false）")
+}
+
 MainActor.assumeIsolated {
     migrateLegacyDefaultsIfNeeded()
     // 自检模式用独立 defaults 域，绝不碰真实数据
     let simMode = CommandLine.arguments.contains("--sim-autoout")
+        || CommandLine.arguments.contains("--sim-autoin")
     // 可用环境变量指定独立 defaults 域（截图/演示用，绝不碰真实数据）
     let suite = ProcessInfo.processInfo.environment["XINXIN_DEFAULTS_SUITE"]
     let model = EarnModel(ud: simMode
         ? (UserDefaults(suiteName: "xiaoxinxin-sim") ?? .standard)
         : (suite.flatMap { UserDefaults(suiteName: $0) } ?? .standard))
 
-    // 自检模式：--sim-autoout 模拟 自动下班 → 加班打卡 → 跨天重置 全链路后退出
+    // 自检模式：--sim-autoin 验证自动上班；--sim-autoout 验证 自动下班 → 加班打卡 → 跨天重置 全链路
+    if CommandLine.arguments.contains("--sim-autoin") {
+        runSimAutoin(model)
+        exit(0)
+    }
     if simMode {
         runSimAutoout(model)
         exit(0)
@@ -2224,10 +2479,16 @@ MainActor.assumeIsolated {
     }
     app.mainMenu = buildMainMenu(appName: "小薪薪")
     app.setActivationPolicy(.regular)   // 常规应用：Dock 图标 + Cmd-Tab，不会被当成后台偷跑
-    app.activate(ignoringOtherApps: true)
-    panel.makeKeyAndOrderFront(nil)
-    // 启动后按真实内容贴合一次：关掉 sizingOptions 后窗口不会再自动适配内容
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { model.onResize?() }
+    // 开机自启动（--autostart）：静默停在状态栏，不弹主窗、不抢前台
+    if CommandLine.arguments.contains("--autostart") {
+        model.statusBarMode = true
+        model.logText = "🌤 已随机启动，点状态栏图标即可展开；到上班时间会自动开始计费"
+    } else {
+        app.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+        // 启动后按真实内容贴合一次：关掉 sizingOptions 后窗口不会再自动适配内容
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { model.onResize?() }
+    }
     let statusBar = StatusBarController(panel: panel, model: model)  // 必须强持有，否则释放后点击失效
     _ = statusBar
 
@@ -2253,6 +2514,21 @@ MainActor.assumeIsolated {
         andSelector: #selector(URLOpener.handle(_:reply:)),
         forEventClass: AEEventClass(kInternetEventClass),
         andEventID: AEEventID(kAEGetURL))
+
+    // 自检：--selftest-launch 验证开机自启动的注册/注销（测完还原到测试前的状态）
+    if CommandLine.arguments.contains("--selftest-launch") {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let before = LaunchAtLogin.isEnabled
+            print("LAUNCH| bundle=\(Bundle.main.bundlePath)")
+            print("LAUNCH| before enabled=\(before) needsApproval=\(LaunchAtLogin.needsApproval) plist=\(FileManager.default.fileExists(atPath: LaunchAtLogin.plistURL.path))")
+            let e1 = LaunchAtLogin.setEnabled(true)
+            print("LAUNCH| enable -> \(e1 ?? "OK")  enabled=\(LaunchAtLogin.isEnabled) plist=\(FileManager.default.fileExists(atPath: LaunchAtLogin.plistURL.path))")
+            let e2 = LaunchAtLogin.setEnabled(false)
+            print("LAUNCH| disable -> \(e2 ?? "OK")  enabled=\(LaunchAtLogin.isEnabled) plist=\(FileManager.default.fileExists(atPath: LaunchAtLogin.plistURL.path))")
+            if before { _ = LaunchAtLogin.setEnabled(true) }
+            exit(0)
+        }
+    }
 
     // 自检：--selftest-correct 校验校正工时算术
     if CommandLine.arguments.contains("--selftest-correct") {

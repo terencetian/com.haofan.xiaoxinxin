@@ -75,6 +75,25 @@ struct LogicTests {
         assert(shiftEndTime(now: d("2026-11-05"), startStr: "09:00", endStr: "abc") == nil, "非法时间返回 nil")
         print("✅ 班次下班时刻 5 项通过（同日/跨零点/非法）")
 
+        // 班次上班时刻（自动打卡上班判定用）
+        func startAt(_ dateStr: String, _ hourOffset: Double, start: String = "09:00", end: String = "18:00") -> Date? {
+            shiftStartTime(now: d(dateStr) + hourOffset * 3600, startStr: start, endStr: end)
+        }
+        let s1 = startAt("2026-11-05", 10)   // 上班后 1 小时
+        assert(s1 != nil && dateKey(s1!) == "2026-11-05" && timeStr(s1!) == "09:00", "同日班 → 当天 09:00")
+        let s2 = startAt("2026-11-05", 8)    // 还没到上班时间
+        assert(s2 != nil && dateKey(s2!) == "2026-11-05" && timeStr(s2!) == "09:00", "同日班未到点 → 当天 09:00")
+        let s3 = startAt("2026-11-05", 23, start: "22:00", end: "06:00")
+        assert(s3 != nil && dateKey(s3!) == "2026-11-05" && timeStr(s3!) == "22:00", "跨零点班（22 点后）→ 当天 22:00")
+        let s4 = startAt("2026-11-06", 2, start: "22:00", end: "06:00")
+        assert(s4 != nil && dateKey(s4!) == "2026-11-05" && timeStr(s4!) == "22:00", "跨零点班（次日凌晨 2 点）→ 前一日 22:00")
+        let s5 = startAt("2026-11-05", 12, start: "22:00", end: "06:00")
+        assert(s5 != nil && dateKey(s5!) == "2026-11-04" && timeStr(s5!) == "22:00", "跨零点班（白天 12 点）→ 前一晚 22:00")
+        assert(shiftStartTime(now: d("2026-11-05"), startStr: "abc", endStr: "18:00") == nil, "非法时间返回 nil")
+        // 跨零点前后半夜必须算同一班次（否则会自动打卡两次）
+        assert(shiftKey(s3!) == shiftKey(s4!), "跨零点前后半夜班次标识一致")
+        print("✅ 班次上班时刻 6 项通过（同日/跨零点/班次标识/非法）")
+
         // 流水明细日期校验
         assert(isValidDayKey("2026-11-05"))
         assert(isValidDayKey("2024-02-29"), "闰年 2/29 有效")

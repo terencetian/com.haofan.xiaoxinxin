@@ -118,8 +118,27 @@ func shiftEndTime(now: Date, startStr: String, endStr: String) -> Date? {
     return now >= startToday ? cal.date(byAdding: .day, value: 1, to: endToday) : endToday
 }
 
-// MARK: - 主色提取（图标吸色）
+// 当前班次的计划上班时刻（shiftEndTime 的对称函数，供自动打卡上班使用）。
+// 同日班 → 当天 start；跨零点班 → now 已过当天 start 则为当天，否则为前一天（凌晨仍属昨晚的班次）。
+func shiftStartTime(now: Date, startStr: String, endStr: String) -> Date? {
+    func comps(_ s: String) -> (Int, Int)? {
+        let p = s.trimmingCharacters(in: .whitespaces).split(separator: ":")
+        guard p.count == 2, let h = Int(p[0]), let m = Int(p[1]),
+              h >= 0, h < 24, m >= 0, m < 60 else { return nil }
+        return (h, m)
+    }
+    guard let (eh, em) = comps(endStr), let (sh, sm) = comps(startStr) else { return nil }
+    let cal = Calendar.current
+    guard let startToday = cal.date(bySettingHour: sh, minute: sm, second: 0, of: now) else { return nil }
+    let crossMidnight = (eh * 60 + em) <= (sh * 60 + sm)
+    if !crossMidnight { return startToday }
+    return now >= startToday ? startToday : cal.date(byAdding: .day, value: -1, to: startToday)
+}
 
+// 班次标识：以计划上班时刻所在日期为准，跨零点班次的前后半夜算同一个班次
+func shiftKey(_ start: Date) -> String { dateKey(start) }
+
+// MARK: - 主色提取（图标吸色）
 func extractPalette(_ image: NSImage) -> (NSColor, NSColor)? {
     guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
     let w = 48, h = 48
