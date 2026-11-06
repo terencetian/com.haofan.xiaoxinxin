@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { width:1080px; height:1440px; }
+  body {
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:#12352A; overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    background:#fff;
+  }
+  .poster{
+    position:relative; width:1080px; height:1440px; overflow:hidden;
+    padding:64px 64px 40px;
+    display:flex; flex-direction:column;
+    background:
+      radial-gradient(900px 620px at 8% -8%, #DEF4E9 0%, rgba(222,244,233,0) 62%),
+      radial-gradient(760px 560px at 104% 6%, #E4F3FA 0%, rgba(228,243,250,0) 58%),
+      radial-gradient(900px 520px at 50% 118%, #E9F8F1 0%, rgba(233,248,241,0) 60%),
+      linear-gradient(180deg,#FFFFFF 0%,#FBFEFC 38%,#F2FBF6 100%);
+  }
+  /* 背景细纹 */
+  .ring{ position:absolute; border-radius:50%; border:1px solid rgba(10,166,106,.10); }
+  .r1{ width:760px; height:760px; left:-330px; top:250px; }
+  .r2{ width:560px; height:560px; left:-230px; top:350px; border-color:rgba(10,166,106,.07); }
+  .r3{ width:520px; height:520px; right:-230px; top:-160px; border-color:rgba(70,150,190,.09); }
+  .dots{
+    position:absolute; right:44px; top:236px; width:120px; height:104px;
+    background-image:radial-gradient(rgba(10,166,106,.26) 1.6px, transparent 1.7px);
+    background-size:26px 26px; opacity:.5;
+  }
+
+  .inner{ position:relative; z-index:3; display:flex; flex-direction:column; height:100%; }
+
+  /* 品牌 */
+  .brand{ display:flex; align-items:center; gap:20px; }
+  .brand img{ width:86px; height:86px; border-radius:22px;
+    box-shadow:0 12px 26px rgba(10,90,60,.20), 0 0 0 1px rgba(10,90,60,.06); }
+  .brand .name{ font-size:40px; font-weight:800; letter-spacing:1px; color:#0E2A20; }
+  .brand .tag{ margin-top:6px; font-size:20px; color:#5F8272; letter-spacing:.8px; }
+  .sync{
+    margin-left:auto; display:flex; align-items:center; gap:9px;
+    font-size:19px; font-weight:600; color:#0A7A4E; letter-spacing:.5px;
+    background:rgba(255,255,255,.85); border:1px solid rgba(10,166,106,.26);
+    padding:11px 20px; border-radius:999px;
+    box-shadow:0 8px 22px rgba(10,120,80,.10);
+  }
+  .sync i{ width:9px; height:9px; border-radius:50%; background:#0AA66A; display:block;
+    box-shadow:0 0 0 4px rgba(10,166,106,.16); }
+
+  /* 标题 */
+  h1{ margin-top:34px; font-size:70px; line-height:1.2; font-weight:800; letter-spacing:-1.5px; color:#0E2A20; }
+  h1 em{ font-style:normal; color:#0AA66A; position:relative; }
+  h1 em{ position:relative; z-index:0; padding:0 3px; }
+  h1 em::after{
+    content:""; position:absolute; left:0; right:0; bottom:9px; height:17px;
+    background:rgba(10,166,106,.17); border-radius:9px; z-index:-1;
+  }
+  .sub{ margin-top:16px; font-size:26px; color:#5F8272; letter-spacing:.5px; }
+  .sub b{ color:#12352A; font-weight:600; }
+
+  /* 展示区 */
+  .stage{ flex:1; display:flex; align-items:center; justify-content:center; gap:62px; position:relative; }
+  .stage::before{
+    content:""; position:absolute; left:50%; top:52%; transform:translate(-50%,-50%);
+    width:820px; height:640px; border-radius:50%;
+    background:radial-gradient(ellipse at center, rgba(10,166,106,.12) 0%, rgba(10,166,106,.05) 45%, rgba(10,166,106,0) 72%);
+    z-index:0;
+  }
+  .stage::before{
+    content:""; position:absolute; left:50%; top:52%; transform:translate(-50%,-50%);
+    width:820px; height:640px; border-radius:50%;
+    background:radial-gradient(ellipse at center, rgba(10,166,106,.12) 0%, rgba(10,166,106,.05) 45%, rgba(10,166,106,0) 72%);
+    z-index:0;
+  }
+  .item{ position:relative; z-index:2; }
+  .cap{
+    position:absolute; top:-16px; left:50%; transform:translateX(-50%); z-index:5;
+    font-size:17px; font-weight:600; letter-spacing:1.2px; white-space:nowrap;
+    padding:9px 18px; border-radius:999px; backdrop-filter:blur(6px);
+  }
+  .cap.mac{ color:#7A5A18; background:rgba(255,252,242,.94); border:1px solid rgba(190,150,60,.35);
+    box-shadow:0 8px 20px rgba(150,110,30,.14); }
+  .cap.and{ color:#0A7A4E; background:rgba(255,255,255,.96); border:1px solid rgba(10,166,106,.32);
+    box-shadow:0 8px 20px rgba(10,120,80,.14); }
+
+  .macwin img{
+    width:368px; display:block; border-radius:17px;
+    filter:saturate(.88) brightness(1.03);
+    box-shadow:0 34px 64px rgba(20,60,45,.22), 0 10px 22px rgba(20,60,45,.12),
+               0 0 0 1px rgba(20,60,45,.12), 0 0 0 8px rgba(255,255,255,.72);
+  }
+  .macwin::after{
+    content:""; position:absolute; left:8%; right:8%; bottom:-30px; height:34px;
+    background:radial-gradient(ellipse at center, rgba(15,70,50,.20), rgba(15,70,50,0) 70%);
+    filter:blur(6px); z-index:-1;
+  }
+  .phone{
+    position:relative; padding:12px; border-radius:56px;
+    background:linear-gradient(160deg,#22362D,#0F211A);
+    box-shadow:0 36px 70px rgba(15,60,45,.26), 0 10px 22px rgba(15,60,45,.14),
+               inset 0 0 0 1px rgba(255,255,255,.14);
+  }
+  .phone img{ width:322px; display:block; border-radius:45px; }
+
+  /* 卖点 */
+  .chips{ display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin-top:34px; }
+  .chip{
+    font-size:19px; color:#0A7A4E; letter-spacing:.3px; font-weight:500;
+    background:rgba(255,255,255,.9); border:1px solid rgba(10,166,106,.24);
+    padding:10px 19px; border-radius:999px;
+    box-shadow:0 6px 16px rgba(10,120,80,.07);
+  }
+
+  /* 底部 */
+  .foot{
+    margin-top:20px; padding-top:22px; display:flex; align-items:center; gap:26px;
+    border-top:1px solid rgba(10,120,80,.12);
+  }
+  .qr{
+    padding:10px; border-radius:20px; background:#fff; line-height:0;
+    box-shadow:0 10px 26px rgba(10,120,80,.14), 0 0 0 1px rgba(10,120,80,.08);
+  }
+  .qr img{ width:118px; height:118px; display:block; }
+  .foot .txt{ flex:1; }
+  .foot .k{ font-size:25px; font-weight:700; color:#0E2A20; letter-spacing:.3px; }
+  .foot .u{ margin-top:9px; font-size:18px; color:#5F8272; letter-spacing:.2px; }
+  .plats{ display:flex; gap:10px; margin-top:12px; }
+  .plats span{
+    font-size:16px; color:#3F6B57; background:rgba(10,166,106,.07);
+    border:1px solid rgba(10,166,106,.18); padding:6px 13px; border-radius:8px;
+  }
+</style>
+</head>
+<body>
+<div class="poster">
+  <div class="ring r1"></div>
+  <div class="ring r2"></div>
+  <div class="ring r3"></div>
+  <div class="dots"></div>
+
+  <div class="inner">
+
+    <div class="brand">
+      <img src="icon.png" alt="">
+      <div>
+        <div class="name">小薪薪</div>
+        <div class="tag">手机 · Mac 双端工资计时器</div>
+      </div>
+      <div class="sync"><i></i>双端可用</div>
+    </div>
+
+    <h1>上班的每一秒<br>都在变成<em>收入</em></h1>
+    <p class="sub">填一次月薪，打卡就开始跳 · <b>到点自动上下班，加班单独算</b></p>
+
+    <div class="stage">
+      <div class="item macwin">
+        <div class="cap mac">macOS · 桌面悬浮窗</div>
+        <img src="mac-home.png" alt="">
+      </div>
+      <div class="item">
+        <div class="cap and">Android · 薄荷主题</div>
+        <div class="phone">
+          <img src="phone-mint.png" alt="">
+        </div>
+      </div>
+    </div>
+
+    <div class="chips">
+      <div class="chip">秒级跳动</div>
+      <div class="chip">到点自动上下班</div>
+      <div class="chip">加班单独计费</div>
+      <div class="chip">本月统计</div>
+      <div class="chip">桌面小组件</div>
+    </div>
+
+    <div class="foot">
+      <div class="qr"><img src="qr.png" alt=""></div>
+      <div class="txt">
+        <div class="k">扫码查看双端下载</div>
+        <div class="u">terencetian.github.io/com.haofan.xiaoxinxin</div>
+        <div class="plats"><span>macOS 14+ · Apple Silicon</span><span>Android 8+</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</body>
+</html>
