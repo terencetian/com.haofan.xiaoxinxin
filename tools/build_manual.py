@@ -21,6 +21,10 @@ img{max-width:100%; height:auto; display:block; margin:22px auto 8px;
     box-shadow:0 10px 30px rgba(20,30,50,.10);}
 p > img + em, p > em:only-child{display:block; text-align:center; font-size:12.5px; color:var(--ink-3);}
 hr{border:0; height:1px; background:var(--line); margin:44px 0;}
+/* 打印：截图去掉边框与阴影，避免 PDF 里出现灰色底板；同时压一下高度免得撑爆版心 */
+@media print{
+  img{box-shadow:none; border:0; max-width:76%; max-height:150mm; width:auto; height:auto;}
+}
 """
 
 

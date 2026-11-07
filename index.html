@@ -23,7 +23,7 @@
 <style>
   :root{
     --navy-0:#0a1526; --navy-1:#0f1f38; --navy-2:#152a4a;
-    --gold-1:#ffd257; --gold-2:#f5a623; --gold-3:#c97f10;
+    --gold-1:#7cc4ff; --gold-2:#3f8fe6; --gold-3:#2a6fb8;
     --rose:#ff6b6b; --ink:#eef3fb; --ink-dim:#9db0cc; --ink-faint:#5f7396;
     --card:rgba(255,255,255,.045); --line:rgba(255,255,255,.09);
   }
@@ -36,7 +36,7 @@
                var(--navy-0);
     color:var(--ink); line-height:1.6; overflow-x:hidden;
   }
-  ::selection{background:rgba(245,166,35,.35)}
+  ::selection{background:rgba(63,143,230,.40)}
   .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
 
   /* ── nav ── */
@@ -45,7 +45,7 @@
   .nav-in{display:flex;align-items:center;justify-content:space-between;height:60px}
   .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;color:var(--ink);text-decoration:none}
   .brand img{width:28px;height:28px;border-radius:7px}
-  .brand .v{font-size:11px;font-weight:600;color:var(--gold-1);border:1px solid rgba(245,166,35,.45);
+  .brand .v{font-size:11px;font-weight:600;color:var(--gold-1);border:1px solid rgba(63,143,230,.45);
             border-radius:99px;padding:1px 8px;margin-left:2px}
   .nav-links{display:flex;gap:26px;font-size:14px}
   .nav-links a{color:var(--ink-dim);text-decoration:none;transition:color .2s}
@@ -54,22 +54,22 @@
 
   /* ── hero ── */
   .hero{padding:88px 0 72px;text-align:center;position:relative}
-  .hero .icon{width:108px;height:108px;border-radius:26px;box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(255,210,87,.14) inset;
+  .hero .icon{width:108px;height:108px;border-radius:26px;box-shadow:0 24px 60px rgba(0,0,0,.55),0 0 0 1px rgba(124,196,255,.14) inset;
               animation:float 5s ease-in-out infinite}
   @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
   .hero h1{margin:30px 0 8px;font-size:clamp(38px,6vw,58px);letter-spacing:.5px;font-weight:800}
-  .hero h1 .gold{background:linear-gradient(120deg,var(--gold-1),var(--gold-2) 55%,#ffdf8e);
+  .hero h1 .gold{background:linear-gradient(120deg,var(--gold-1),var(--gold-2) 55%,#bfe0ff);
                  -webkit-background-clip:text;background-clip:text;color:transparent}
   .hero .slogan{font-size:clamp(16px,2.4vw,20px);color:var(--ink-dim);margin-bottom:36px}
   .cta-row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
   .btn{display:inline-flex;align-items:center;gap:9px;padding:13px 30px;border-radius:99px;
        font-size:16px;font-weight:700;text-decoration:none;transition:transform .18s,box-shadow .18s}
   .btn:active{transform:scale(.97)}
-  .btn-gold{background:linear-gradient(160deg,var(--gold-1),var(--gold-2));color:#241a02;
-            box-shadow:0 10px 28px rgba(245,166,35,.32)}
-  .btn-gold:hover{transform:translateY(-2px);box-shadow:0 16px 36px rgba(245,166,35,.42)}
+  .btn-gold{background:linear-gradient(160deg,var(--gold-1),var(--gold-2));color:#06131f;
+            box-shadow:0 10px 28px rgba(63,143,230,.32)}
+  .btn-gold:hover{transform:translateY(-2px);box-shadow:0 16px 36px rgba(63,143,230,.42)}
   .btn-ghost{color:var(--ink);border:1px solid var(--line);background:var(--card)}
-  .btn-ghost:hover{border-color:rgba(255,210,87,.5);color:var(--gold-1)}
+  .btn-ghost:hover{border-color:rgba(124,196,255,.5);color:var(--gold-1)}
   .hero .meta{margin-top:22px;font-size:13px;color:var(--ink-faint)}
   .hero .meta b{color:var(--ink-dim);font-weight:600}
   .hero .whatsnew{margin-top:14px;display:inline-block;font-size:12.5px;line-height:1.9;
@@ -80,15 +80,15 @@
 
   /* live demo ticker */
   .demo{margin:64px auto 0;max-width:560px;border-radius:22px;padding:26px 30px;
-        background:linear-gradient(165deg,#fdf0dd 0%,#f8ddc0 55%,#f3cfc0 100%);
-        box-shadow:0 30px 70px rgba(0,0,0,.5);color:#5c4326;text-align:center}
-  .demo .label{font-size:13px;color:#9a7a54}
-  .demo .amount{font-size:52px;font-weight:800;color:#e03030;font-variant-numeric:tabular-nums;letter-spacing:1px}
+        background:linear-gradient(165deg,#f6fbff 0%,#e8f3ff 55%,#d9eafb 100%);
+        box-shadow:0 30px 70px rgba(0,0,0,.5);color:#12324d;text-align:center}
+  .demo .label{font-size:13px;color:#5b7f9c}
+  .demo .amount{font-size:52px;font-weight:800;color:#1e6fd0;font-variant-numeric:tabular-nums;letter-spacing:1px}
   .demo .amount small{font-size:24px;font-weight:700}
   .demo .bar{height:10px;border-radius:99px;background:rgba(255,255,255,.55);overflow:hidden;margin-top:16px}
   .demo .bar i{display:block;height:100%;width:0;border-radius:99px;
-               background:linear-gradient(90deg,var(--gold-1),#e0684a);transition:width .9s cubic-bezier(.2,.8,.3,1)}
-  .demo .coins{font-size:12px;color:#b08d62;margin-top:10px;font-variant-numeric:tabular-nums}
+               background:linear-gradient(90deg,var(--gold-1),var(--gold-2));transition:width .9s cubic-bezier(.2,.8,.3,1)}
+  .demo .coins{font-size:12px;color:#6b8fae;margin-top:10px;font-variant-numeric:tabular-nums}
 
   /* ── sections ── */
   section{padding:84px 0}
@@ -97,7 +97,7 @@
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:24px 22px;
         transition:transform .2s,border-color .2s,background .2s}
-  .card:hover{transform:translateY(-4px);border-color:rgba(255,210,87,.35);background:rgba(255,255,255,.07)}
+  .card:hover{transform:translateY(-4px);border-color:rgba(124,196,255,.35);background:rgba(255,255,255,.07)}
   .card .em{font-size:26px;display:block;margin-bottom:10px}
   .card h3{font-size:16.5px;margin-bottom:6px}
   .card p{font-size:13.5px;color:var(--ink-dim)}
@@ -124,13 +124,13 @@
   .install{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px}
   .step{position:relative;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px 24px 22px}
   .step .n{position:absolute;top:-14px;left:20px;width:28px;height:28px;border-radius:99px;
-           background:linear-gradient(160deg,var(--gold-1),var(--gold-2));color:#241a02;
+           background:linear-gradient(160deg,var(--gold-1),var(--gold-2));color:#06131f;
            font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;
-           box-shadow:0 6px 16px rgba(245,166,35,.35)}
+           box-shadow:0 6px 16px rgba(63,143,230,.35)}
   .step h3{font-size:15.5px;margin:8px 0 6px}
   .step p{font-size:13.5px;color:var(--ink-dim)}
   .step code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--gold-1);
-             background:rgba(255,210,87,.09);padding:2px 7px;border-radius:6px;word-break:break-all}
+             background:rgba(124,196,255,.09);padding:2px 7px;border-radius:6px;word-break:break-all}
 
   /* footer */
   footer{border-top:1px solid var(--line);padding:36px 0 44px;text-align:center;color:var(--ink-faint);font-size:13px}
@@ -143,7 +143,7 @@
 
 <nav>
   <div class="wrap nav-in">
-    <a class="brand" href="#"><img src="assets/AppIcon-1024.png" alt="小薪薪图标">小薪薪<span class="v">v1.9.4</span></a>
+    <a class="brand" href="#"><img src="assets/AppIcon-1024.png" alt="小薪薪图标">小薪薪<span class="v">v2.6.2</span></a>
     <div class="nav-links">
       <a href="#features">功能</a>
       <a href="#shots">界面</a>
@@ -157,14 +157,14 @@
 <header class="hero wrap">
   <img class="icon" src="assets/AppIcon-1024.png" alt="小薪薪应用图标">
   <h1>把月薪拆到<span class="gold">每一秒</span></h1>
-  <p class="slogan">一枚常驻桌面（和手机）的工资计时器——打卡上班后，看着钱一格格进账。</p>
+  <p class="slogan">一枚常驻桌面的工资计时器。打卡上班后看着钱一格格进账，顺带帮你数着离新年、生日、纪念日还有几天。</p>
   <div class="cta-row">
     <a class="btn btn-gold" href="https://github.com/terencetian/com.haofan.xiaoxinxin/releases/latest">⬇ 下载 macOS 安装包</a>
     <a class="btn btn-ghost" href="https://github.com/terencetian/xiaoxinxin-android/releases/latest">⬇ Android 尝鲜版</a>
     <a class="btn btn-ghost" href="https://github.com/terencetian/com.haofan.xiaoxinxin">查看源码</a>
   </div>
   <p class="meta">macOS 13+ / Android 8+ · <b>完全离线</b> · 无账号 · 无上传 · 免费分发</p>
-  <p class="whatsnew"><b>v1.9.4 更新</b>　修复点图标窗口不前置（被别的窗口盖住）· 到点自动上班 · 开机自启动 · 小组件秒级走数</p>
+  <p class="whatsnew"><b>v2.6.2 更新</b>　拖窗口终于跟手 · 顶栏整条可点 · 顶部 / 底部固定拖拽带 · 四款主题与隐私模式</p>
 
   <div class="demo" aria-hidden="true">
     <div class="label">正在进账 · 今日已到账</div>
@@ -179,22 +179,22 @@
     <h2 class="sec-title">功能一览</h2>
     <p class="sec-sub">不止是计时器，是一整套「时间值多少钱」的可视化</p>
     <div class="grid">
-      <div class="card"><span class="em">🕐</span><h3>打卡计时</h3><p>上班打卡后按秒累计今日到账，下班打卡停止并结算。</p></div>
-      <div class="card"><span class="em">⏰</span><h3>到点自动下班</h3><p>到了计划下班时间自动打卡下班，忘了点也不会多算钱；不想要可在设置里关掉。</p></div>
-      <div class="card"><span class="em">🌙</span><h3>加班计费</h3><p>下班后或过点再打卡自动识别为加班，首页亮起「加班中」，加班时长单独累计。</p></div>
-      <div class="card"><span class="em">🌅</span><h3>隔天自动重置</h3><p>跨天自动清零今日到账与加班；如果当时还在计费，从零点重新起算新的一天。</p></div>
-      <div class="card"><span class="em">📈</span><h3>月度统计</h3><p>首页直接看本月累计进账与本月加班时长，按天流水汇总，月初自动归零。</p></div>
-      <div class="card"><span class="em">📋</span><h3>流水明细</h3><p>设置页按日期范围查询每天的到账与加班，忘了打卡可手动补记，记错可删除。</p></div>
-      <div class="card"><span class="em">💰</span><h3>金币进度条</h3><p>进度 = 今日已赚 ÷ 日薪，金币压在进度条前端一路向前。</p></div>
-      <div class="card"><span class="em">🎨</span><h3>图标吸色</h3><p>自动提取进度条图标的主色，染遍进度条与窗口背景；图标可在设置页换成自己喜欢的图。</p></div>
-      <div class="card"><span class="em">📅</span><h3>工作日自动计算</h3><p>按 2026 国办法定节假日算出当月工作日，含调休补班。</p></div>
-      <div class="card"><span class="em">⏱️</span><h3>工时自定义</h3><p>自定义上下班时间与休息时长，支持跨零点排班，还可填校正工时补记或核减。</p></div>
-      <div class="card"><span class="em">🗂️</span><h3>设置分区折叠</h3><p>薪酬、工时、校正、外观、窗口、流水六大功能区，点标题展开，窗口跟着变高变矮。</p></div>
-      <div class="card"><span class="em">▫️</span><h3>迷你模式</h3><p>收起成一条小胶囊：图标 + 进度条 + 金额，一键展回大窗。</p></div>
-      <div class="card"><span class="em">💵</span><h3>状态栏常驻</h3><p>菜单栏图标常驻，可显示实时金额与进度，右键出完整菜单。</p></div>
-      <div class="card"><span class="em">📌</span><h3>贴边收纳</h3><p>小窗拖到屏幕边缘停住，自动收纳进状态栏，随取随用。</p></div>
-      <div class="card"><span class="em">🌗</span><h3>深色模式</h3><p>跟随系统在浅色与深色之间自动切换，玻璃质感与文字对比度都做过适配。</p></div>
-      <div class="card"><span class="em">🧩</span><h3>桌面小组件</h3><p>内置 WidgetKit 扩展，工资进度直接上桌面。</p></div>
+      <div class="card"><span class="em">🏠</span><h3>三张卡的首页</h3><p>Your Money 薪酬、Your Days 倒计时与纪念日各占一张进度卡，点卡片才进二级页；三张卡可单独隐藏，至少留一张。</p></div>
+      <div class="card"><span class="em">🧭</span><h3>顶栏工具条</h3><p>顶栏没有留白：标题＝关于、中间 MONEY / DAYS 模块切换、右侧打卡状态胶囊，点哪儿都把窗口提到最前。</p></div>
+      <div class="card"><span class="em">✋</span><h3>拖拽与置前</h3><p>顶部 / 底部各一条 12pt 固定拖拽带，按住即拖、光标变手型；点击不再穿透到后面的 App。</p></div>
+      <div class="card"><span class="em">🕐</span><h3>打卡计时</h3><p>上班打卡后按秒累计今日到账，下班打卡停止并结算；计时基于真实时间戳，切后台也不少算。</p></div>
+      <div class="card"><span class="em">⏰</span><h3>到点自动上下班</h3><p>上班时间一到自动开表、到点自动停表；错过整点从中途起算，手动打过卡的班次不会被重复打开。</p></div>
+      <div class="card"><span class="em">🌙</span><h3>加班计费</h3><p>下班后或过点再打卡自动识别加班，也可手动「开始加班」独立计时；超出 100% 的部分画成橙色第二段。</p></div>
+      <div class="card"><span class="em">🗓</span><h3>自定义每周工作日</h3><p>周一到周天哪些算工作日自己勾，可叠加法定节假日与调休，也能直接手填天数——大小周、单休都对得上。</p></div>
+      <div class="card"><span class="em">🎯</span><h3>自定义倒计时</h3><p>新年、生日、项目上线按天走数；每年重复或指定年份，可设起始日与目标时刻，显示天数或完成百分比。</p></div>
+      <div class="card"><span class="em">📖</span><h3>纪念日</h3><p>从起始日按自然日累计，主展示「2 年 5 个月 19 天」，另有累计天数、月数、年数芯片。</p></div>
+      <div class="card"><span class="em">🗂</span><h3>页内事件管理</h3><p>倒计时页与纪念日页直接新增、改名、改日期、删除、切换当前，不用回设置页。</p></div>
+      <div class="card"><span class="em">🔒</span><h3>隐私模式</h3><p>4 位密码，开启后所有金额变成百分比进度：8 小时 = 100%，加班 4 小时 → 150%。顶栏锁一键临时查看 60 秒。</p></div>
+      <div class="card"><span class="em">🎨</span><h3>四款主题 + 无极调色</h3><p>默认「白 + 天蓝」，另有 Liquid Glass 透明 / 白 + 薄荷绿 / Sony 30th；背景、文本、重点色可用色卡随意调，透明度独立可调。</p></div>
+      <div class="card"><span class="em">💵</span><h3>菜单栏 6 项可多选</h3><p>今日已赚、本月累计、今日 / 本月进度、倒计时剩余、纪念日累计，可开轮播（3 / 5 / 8 / 12 秒）。</p></div>
+      <div class="card"><span class="em">🧩</span><h3>双桌面小组件</h3><p>MONEY 与 DAYS 两个独立组件，各支持小 / 中尺寸，配色跟随主题，秒级实时走数。</p></div>
+      <div class="card"><span class="em">📋</span><h3>流水明细</h3><p>按日期范围查询每天的到账与加班，忘了打卡可补记、记错可删除，保留最近两个月。</p></div>
+      <div class="card"><span class="em">▫️</span><h3>迷你条与贴边收纳</h3><p>收成一条小胶囊只剩进度条与金额；拖到屏幕边缘停住就自动收进菜单栏。</p></div>
     </div>
   </div>
 </section>
@@ -202,19 +202,31 @@
 <section id="shots" style="background:rgba(255,255,255,.02);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
   <div class="wrap">
     <h2 class="sec-title">界面预览</h2>
-    <p class="sec-sub">Liquid Glass 玻璃质感 · 深浅色自动跟随 · macOS 26+ 自动启用原生材质</p>
+    <p class="sec-sub">全部截图为默认「白 + 天蓝」主题 · 另有 Liquid Glass / 薄荷绿 / Sony 30th 三款可换</p>
     <div class="shots">
-      <div class="shot">
-        <img src="screenshots/home.png" alt="小薪薪主界面：今日已到账金额与金币进度条" loading="lazy">
-        <div class="cap">主界面 · 实时到账 + 月度统计 + 打卡</div>
+      <div class="shot span2">
+        <img src="screenshots/home.png" alt="小薪薪首页：Your Money 薪酬、Your Days 倒计时与纪念日三张进度卡" loading="lazy">
+        <div class="cap">首页 · 三张进度卡：钱、倒计时、纪念日</div>
       </div>
       <div class="shot">
-        <img src="screenshots/settings.png" alt="小薪薪设置页" loading="lazy">
-        <div class="cap">设置页 · 六大功能区自由折叠 / 流水明细查询</div>
+        <img src="screenshots/salary.png" alt="小薪薪薪酬页：今日到账、金币进度条与八块芯片" loading="lazy">
+        <div class="cap">Your Money · 薪酬页（今日 / 本月 / 加班）</div>
+      </div>
+      <div class="shot">
+        <img src="screenshots/countdown.png" alt="小薪薪倒计时页：剩余天数与进度" loading="lazy">
+        <div class="cap">Your Days · 倒计时（天数 / 百分比）</div>
+      </div>
+      <div class="shot">
+        <img src="screenshots/recordDay.png" alt="小薪薪纪念日页：累计时长与芯片" loading="lazy">
+        <div class="cap">Your Days · 纪念日（累计 2 年 5 个月 19 天）</div>
+      </div>
+      <div class="shot">
+        <img src="screenshots/privacy.png" alt="小薪薪隐私模式：金额变成百分比进度" loading="lazy">
+        <div class="cap">隐私模式 · 金额全变百分比，加班计入 150%</div>
       </div>
       <div class="shot span2">
-        <img src="screenshots/mini.png" alt="小薪薪迷你模式胶囊" loading="lazy">
-        <div class="cap">迷你模式 · 收起成一条小胶囊，一键展回</div>
+        <img src="screenshots/settings.png" alt="小薪薪设置页：三大分区共 19 个折叠分组" loading="lazy">
+        <div class="cap">设置页 · 三大分区 19 个分组，窗口高度与首页一致</div>
       </div>
     </div>
   </div>
@@ -239,7 +251,7 @@
     <div class="install">
       <div class="step"><span class="n">1</span>
         <h3>下载安装包</h3>
-        <p>到 <a href="https://github.com/terencetian/com.haofan.xiaoxinxin/releases/latest" style="color:var(--gold-1)">Releases</a> 下载 <code>xiaoxinxin-v1.9.4.dmg</code>，打开后把「小薪薪」拖进「应用程序」。</p>
+        <p>到 <a href="https://github.com/terencetian/com.haofan.xiaoxinxin/releases/latest" style="color:var(--gold-1)">Releases</a> 下载 <code>小薪薪-v2.6.2-macos-arm64.dmg</code>，打开后把「小薪薪」拖进「应用程序」。</p>
         <p>安卓用户去 <a href="https://github.com/terencetian/xiaoxinxin-android/releases/latest" style="color:var(--gold-1)">xiaoxinxin-android</a> 下载 APK 直接装（尝鲜版，debug 签名）。</p>
       </div>
       <div class="step"><span class="n">2</span>
@@ -257,7 +269,7 @@
 <footer>
   <div class="wrap">
     <p><a href="https://github.com/terencetian/com.haofan.xiaoxinxin">GitHub 仓库</a> · <a href="https://github.com/terencetian/com.haofan.xiaoxinxin/releases">版本发布</a> · <a href="https://github.com/terencetian/com.haofan.xiaoxinxin/blob/main/小薪薪产品手册.md">产品手册</a></p>
-    <p class="fine">© 2026 逍狗屁屁 · 小薪薪 v1.9.4 · 让每一秒都看得见价值</p>
+    <p class="fine">© 2026 逍狗屁屁 · 小薪薪 v2.6.2 · 让每一秒都看得见价值</p>
   </div>
 </footer>
 

@@ -8,8 +8,8 @@
 :root{
   --ink:#1a1d21; --ink-2:#3f464e; --ink-3:#6b7480;
   --line:#e3e6ea; --line-strong:#c9ced6;
-  --bg:#ffffff; --bg-soft:#f7f8fa; --bg-warm:#fffaf0;
-  --accent:#c0392b; --accent-soft:#fdf0ee;
+  --bg:#ffffff; --bg-soft:#f7f8fa; --bg-warm:#f2f7fe;
+  --accent:#2a85e6; --accent-soft:#eaf3fd;
 }
 *{box-sizing:border-box;}
 body{
@@ -35,7 +35,7 @@ p{margin:10px 0; color:var(--ink-2);}
 strong{color:var(--ink); font-weight:600;}
 blockquote{
   margin:20px 0; padding:14px 20px; background:var(--bg-warm);
-  border-left:3px solid #e0a83a; border-radius:0 6px 6px 0;
+  border-left:3px solid #7fb2ee; border-radius:0 6px 6px 0;
   color:var(--ink-2); font-size:14.5px;
 }
 blockquote p{margin:4px 0;}
@@ -46,7 +46,7 @@ table{
   table-layout:auto;
 }
 th{
-  background:#eef0f3; color:var(--ink); font-weight:600; text-align:left;
+  background:#eef4fc; color:var(--ink); font-weight:600; text-align:left;
   padding:10px 12px; border:1px solid var(--line); white-space:nowrap; font-size:13.5px;
 }
 td{
@@ -69,10 +69,17 @@ pre code{background:none; color:inherit; padding:0; font-weight:400; white-space
 ul,ol{padding-left:24px; margin:10px 0; color:var(--ink-2);}
 li{margin:5px 0;}
 ul li::marker{color:var(--accent);}
-a{color:var(--accent); text-decoration:none; border-bottom:1px solid #f0c4bd;}
+a{color:var(--accent); text-decoration:none; border-bottom:1px solid #bcd8f7;}
 @media print{
-  body{padding:0; font-size:11pt;}
-  h2{page-break-after:avoid;} table{page-break-inside:auto;} tr{page-break-inside:avoid;}
+  @page{ size:A4; margin:16mm 14mm; }
+  body{padding:0; font-size:10.5pt; line-height:1.72;}
+  h1{margin-top:0; page-break-before:avoid;}
+  h2,h3,h4{page-break-after:avoid;}
+  table{page-break-inside:auto;} tr{page-break-inside:avoid;}
+  img{max-width:76%; max-height:150mm; width:auto; height:auto; page-break-inside:avoid;
+      box-shadow:none; border:none;}
+  blockquote,pre{page-break-inside:avoid;}
+  a{color:var(--accent); border-bottom:none;}
 }
 @media (max-width:640px){
   body{padding:0 14px 60px; font-size:14px;}

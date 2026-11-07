@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>小薪薪</string>
 	<key>CFBundleGetInfoString</key>
-	<string>小薪薪 1.0 · 开发者 逍狗屁屁 · 让每一秒都看得见价值</string>
+	<string>小薪薪 2.6.0 · Your Money / Your Days · 开发者 逍狗屁屁 · 让每一秒都看得见价值</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.9.4</string>
+	<string>2.6.2</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,14 +30,16 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>30</string>
+	<string>43</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>© 2026 逍狗屁屁. All rights reserved.</string>
+	<string>© 2026 逍狗屁屁. All rights reserved. Sony 30th 主题为非官方致敬配色，PlayStation 相关商标归其权利人所有。</string>
 	<key>XinXinDeveloper</key>
 	<string>逍狗屁屁</string>
 	<key>XinXinDeveloperTagline</key>
 	<string>让每一秒都看得见价值</string>
+	<key>XinXinReleaseDate</key>
+	<string>2026-11-07</string>
 </dict>
 </plist>

@@ -63,15 +63,33 @@ let HOLIDAYS: Set<String> = {
     return s
 }()
 
-func isWorkDate(_ d: Date) -> Bool {
-    let key = dateKey(d)
-    if HOLIDAYS.contains(key) { return false }
-    if EXTRA_WORKDAYS.contains(key) { return true }
-    let dow = Calendar.current.component(.weekday, from: d)
-    return dow != 1 && dow != 7
+// MARK: - 2.0 自定义工作日规则
+//
+// Calendar.weekday：1=周日，2=周一 … 7=周六。
+// 旧版把「周一~周五 + 法定节假日」写死，且在启动时只算一次（跨月不重算）；
+// 2.0 起由调用方每次传入规则，按当前月份实时计算，手填天数优先级最高。
+
+struct WorkdayRule {
+    var weekdays: Set<Int>          // 允许计薪的星期
+    var useLegalHolidays: Bool      // 是否叠加国办法定节假日 / 调休补班
+    var manualDays: Int?            // 手动指定每月天数（>0 时直接采用）
+
+    static let `default` = WorkdayRule(weekdays: [2, 3, 4, 5, 6],
+                                       useLegalHolidays: true, manualDays: nil)
 }
 
-func monthWorkDays(_ date: Date) -> Int {
+func isWorkDate(_ d: Date, rule: WorkdayRule) -> Bool {
+    let key = dateKey(d)
+    if rule.useLegalHolidays {
+        if HOLIDAYS.contains(key) { return false }
+        if EXTRA_WORKDAYS.contains(key) { return true }
+    }
+    let dow = Calendar.current.component(.weekday, from: d)
+    return rule.weekdays.contains(dow)
+}
+
+func monthWorkDays(_ date: Date, rule: WorkdayRule) -> Int {
+    if let n = rule.manualDays, n > 0 { return n }
     let cal = Calendar.current
     let ym = cal.dateComponents([.year, .month], from: date)
     guard let range = cal.range(of: .day, in: .month, for: date) else { return 22 }
@@ -79,10 +97,14 @@ func monthWorkDays(_ date: Date) -> Int {
     for day in range {
         var dc = DateComponents()
         dc.year = ym.year; dc.month = ym.month; dc.day = day
-        if let d = cal.date(from: dc), isWorkDate(d) { n += 1 }
+        if let d = cal.date(from: dc), isWorkDate(d, rule: rule) { n += 1 }
     }
     return n
 }
+
+// 兼容 1.x 单测与调用：不传规则 = 默认法定口径
+func isWorkDate(_ d: Date) -> Bool { isWorkDate(d, rule: .default) }
+func monthWorkDays(_ date: Date) -> Int { monthWorkDays(date, rule: .default) }
 
 func fmt(_ n: Double, _ dec: Int = 2) -> String {
     let formatter = NumberFormatter()
@@ -181,4 +203,293 @@ func extractPalette(_ image: NSImage) -> (NSColor, NSColor)? {
         NSColor(red: t.r, green: t.g, blue: t.b, alpha: 1)
     }
     return (col(first), col(second ?? first))
+}
+
+// MARK: - 2.0 进度条统计内容
+//
+// 进度条不再绑死「今日已赚 ÷ 日薪」：所有口径统一算出一个 ratio（可 > 1，
+// 例如 8 小时工时 + 4 小时加班 = 1.5），由 UI 决定怎么画、怎么标数字。
+
+enum ProgressMetric: String, CaseIterable, Codable {
+    case todaySalary    // 今日工资进度
+    case monthSalary    // 本月工资进度
+    case todayHours     // 今日工时进度（可超 100%）
+    case monthHours     // 本月工时进度（可超 100%）
+    case countdown      // 自定义日期倒计时
+
+    var title: String {
+        switch self {
+        case .todaySalary: return "今日工资进度"
+        case .monthSalary: return "本月工资进度"
+        case .todayHours:  return "今日工时进度"
+        case .monthHours:  return "本月工时进度"
+        case .countdown:   return "日期倒计时"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .todaySalary: return "今日已到账 ÷ 日薪"
+        case .monthSalary: return "本月累计 ÷ 月薪"
+        case .todayHours:  return "今日已工作 ÷ 计划工时，加班可超 100%"
+        case .monthHours:  return "本月已工作 ÷ 本月应出勤工时"
+        case .countdown:   return "按天走数，可显示剩余天数或完成百分比"
+        }
+    }
+
+    var isMoney: Bool { self == .todaySalary || self == .monthSalary }
+}
+
+/// 工时进度：workedSeconds ÷ 计划工时，加班时自然超过 1
+func hoursProgress(workedSeconds: Double, plannedHours: Double) -> Double {
+    guard plannedHours > 0, workedSeconds > 0 else { return 0 }
+    return workedSeconds / (plannedHours * 3600)
+}
+
+/// 把可 >1 的进度安全地折成「条内填充比例」，超出部分由 UI 另画第二段
+func clampedProgress(_ r: Double) -> Double { min(1, max(0, r)) }
+
+/// 百分比文案：加班 4h（8h 为满）→ 150.0%
+func percentText(_ r: Double, dec: Int = 1) -> String {
+    String(format: "%.\(dec)f%%", max(0, r) * 100)
+}
+
+// MARK: - 2.1 自定义日期倒计时（按天维度走数）
+
+struct CountdownItem: Identifiable, Codable, Equatable {
+    var id: String = UUID().uuidString
+    var name: String = ""             // 新年 / 生日 / 纪念日
+    var month: Int = 1
+    var day: Int = 1
+    var year: Int? = nil              // nil = 每年重复；有值 = 一次性目标
+    var mode: String = "days"         // "days" = 剩余天数；"percent" = 完成百分比
+    var createdKey: String = ""       // 创建日 yyyy-MM-dd（一次性目标的百分比起点）
+
+    // 2.4：用户可自己指定起始日期与目标时刻；留空 = 沿用旧口径
+    // （一次性用创建日、每年重复用上一次同月同日；时刻默认 00:00）
+    var startYear: Int? = nil
+    var startMonth: Int? = nil
+    var startDay: Int? = nil
+    var targetHour: Int? = nil
+    var targetMinute: Int? = nil
+
+    var isYearly: Bool { year == nil }
+    var modeTitle: String { mode == "percent" ? "百分比" : "天数" }
+
+    /// 是否设置了自定义起始日
+    var hasCustomStart: Bool {
+        guard let y = startYear, let m = startMonth, let d = startDay else { return false }
+        guard (1970...2100).contains(y), (1...12).contains(m), (1...31).contains(d) else { return false }
+        var dc = DateComponents()
+        dc.year = y; dc.month = m; dc.day = d
+        guard let date = Calendar.current.date(from: dc) else { return false }
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return c.year == y && c.month == m && c.day == d
+    }
+
+    var startKeyText: String? {
+        guard hasCustomStart, let y = startYear, let m = startMonth, let d = startDay else { return nil }
+        return String(format: "%04d-%02d-%02d", y, m, d)
+    }
+
+    /// 目标时刻文本 HH:mm
+    var targetTimeText: String { String(format: "%02d:%02d", targetHour ?? 0, targetMinute ?? 0) }
+    var hasCustomTime: Bool { (targetHour ?? 0) != 0 || (targetMinute ?? 0) != 0 }
+
+    var valid: Bool {
+        guard (1...12).contains(month), (1...31).contains(day) else { return false }
+        if let y = year, !(1970...2100).contains(y) { return false }
+        if let h = targetHour, !(0...23).contains(h) { return false }
+        if let mi = targetMinute, !(0...59).contains(mi) { return false }
+        if startYear != nil || startMonth != nil || startDay != nil, !hasCustomStart { return false }
+        // 用闰年校验月日组合（允许 2/29，非闰年由 Calendar 归一化到 3/1）
+        var dc = DateComponents()
+        dc.year = 2024; dc.month = month; dc.day = day
+        return Calendar.current.date(from: dc) != nil
+    }
+}
+
+/// 2.4：自定义起始日必须早于目标日（每年重复的目标日跨年顺延，不做该校验）
+func countdownRangeError(_ item: CountdownItem) -> String? {
+    guard item.hasCustomStart, let key = item.startKeyText, let y = item.year else { return nil }
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    guard let s = f.date(from: key),
+          let t = f.date(from: String(format: "%04d-%02d-%02d", y, item.month, item.day)) else { return nil }
+    return t <= s ? "起始日必须早于目标日" : nil
+}
+
+struct CountdownProgress {
+    var daysLeft: Int          // 距目标日剩余自然日（当天为 0）
+    var totalDays: Int         // 起点 → 目标日的总天数（百分比分母）
+    var elapsedDays: Int
+    var ratio: Double          // 0...1，进度条走数用
+    var targetKey: String      // yyyy-MM-dd
+    var expired: Bool          // 一次性目标已过
+}
+
+/// 自然日差（跨时区/夏令时安全：先归一到当天 00:00）
+func calendarDays(from: Date, to: Date) -> Int {
+    let cal = Calendar.current
+    let a = cal.startOfDay(for: from), b = cal.startOfDay(for: to)
+    return cal.dateComponents([.day], from: a, to: b).day ?? 0
+}
+
+/// 构造指定年月日的当天 00:00；非法月日（如非闰年 2/29）由 Calendar 归一化
+private func makeDay(year: Int, month: Int, day: Int) -> Date? {
+    var dc = DateComponents()
+    dc.year = year; dc.month = month; dc.day = day
+    dc.hour = 0; dc.minute = 0; dc.second = 0
+    return Calendar.current.date(from: dc)
+}
+
+/// 构造指定年月日 + 时刻（2.4：倒计时支持精确到分钟）
+private func makeMoment(year: Int, month: Int, day: Int, hour: Int, minute: Int) -> Date? {
+    var dc = DateComponents()
+    dc.year = year; dc.month = month; dc.day = day
+    dc.hour = max(0, min(23, hour)); dc.minute = max(0, min(59, minute)); dc.second = 0
+    return Calendar.current.date(from: dc)
+}
+
+/// 计算倒计时进度。年度重复：过了今年就顺延到明年；一次性：过期返回 expired=true。
+/// 2.4：起点优先用用户设置的起始日，其次才是创建日 / 上一次同月同日；
+/// 目标可带时刻，进度按秒算（跨天也连续），天数仍按自然日给。
+func countdownProgress(_ item: CountdownItem, now: Date = Date()) -> CountdownProgress? {
+    guard item.valid else { return nil }
+    let cal = Calendar.current
+    let today = cal.startOfDay(for: now)
+    let thisYear = cal.component(.year, from: today)
+    let hour = item.targetHour ?? 0
+    let minute = item.targetMinute ?? 0
+
+    let target: Date?
+    if let y = item.year {
+        target = makeMoment(year: y, month: item.month, day: item.day, hour: hour, minute: minute)
+    } else if let t = makeMoment(year: thisYear, month: item.month, day: item.day, hour: hour, minute: minute) {
+        target = t >= now ? t
+            : makeMoment(year: thisYear + 1, month: item.month, day: item.day, hour: hour, minute: minute)
+    } else {
+        target = nil
+    }
+    guard let target else { return nil }
+
+    // 百分比起点：用户指定起始日 > 年度重复的「上一次同月同日」> 一次性目标的创建日
+    var start: Date?
+    if let key = item.startKeyText {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        start = f.date(from: key).map { cal.startOfDay(for: $0) }
+    }
+    if start == nil {
+        if item.isYearly {
+            let lastYear = cal.component(.year, from: target) - 1
+            start = makeMoment(year: lastYear, month: item.month, day: item.day, hour: hour, minute: minute)
+        } else if isValidDayKey(item.createdKey) {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+            f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+            start = f.date(from: item.createdKey).map { cal.startOfDay(for: $0) }
+        }
+    }
+    if start == nil || start! >= target {
+        start = cal.date(byAdding: .day, value: -365, to: target)
+    }
+    let begin = start!
+    let totalSeconds = max(60, target.timeIntervalSince(begin))
+    let elapsedSeconds = min(totalSeconds, max(0, now.timeIntervalSince(begin)))
+    let total = max(1, calendarDays(from: begin, to: target))
+    let elapsed = min(total, max(0, calendarDays(from: begin, to: min(now, target))))
+    let left = max(0, calendarDays(from: today, to: target))
+    return CountdownProgress(daysLeft: left, totalDays: total, elapsedDays: elapsed,
+                             ratio: min(1, elapsedSeconds / totalSeconds),
+                             targetKey: dateKey(target),
+                             expired: !item.isYearly && target < now)
+}
+
+/// 2.4：纪念日的「累计时长」= 起始日到今天，拆成 X 年 Y 个月 Z 天
+struct ElapsedSpan: Equatable {
+    var years = 0
+    var months = 0
+    var days = 0
+    var totalDays = 0
+
+    var shortText: String {
+        var parts: [String] = []
+        if years > 0 { parts.append("\(years) 年") }
+        if months > 0 { parts.append("\(months) 个月") }
+        if days > 0 || parts.isEmpty { parts.append("\(days) 天") }
+        return parts.joined(separator: " ")
+    }
+}
+
+func elapsedSpan(from start: Date, to end: Date = Date()) -> ElapsedSpan {
+    let cal = Calendar.current
+    let s = cal.startOfDay(for: start), e = cal.startOfDay(for: end)
+    guard e >= s else { return ElapsedSpan() }
+    let c = cal.dateComponents([.year, .month, .day], from: s, to: e)
+    return ElapsedSpan(years: c.year ?? 0, months: c.month ?? 0, days: c.day ?? 0,
+                       totalDays: cal.dateComponents([.day], from: s, to: e).day ?? 0)
+}
+
+// MARK: - 2.1 记录日 / 纪念日（从起始日累计天数，与倒计时方向相反）
+
+struct RecordDayItem: Identifiable, Codable, Equatable {
+    var id: String = UUID().uuidString
+    var name: String = ""             // 在一起 / 入职 / 搬家 …
+    var year: Int = 2026              // 起始年份
+    var month: Int = 1
+    var day: Int = 1
+    var targetDays: Int = 0           // 0 = 自动按 100 天里程碑；>0 = 自定义目标天数
+    var mode: String = "days"         // "days" = 累计天数；"percent" = 里程碑百分比
+
+    var milestoneStep: Int { targetDays > 0 ? targetDays : 100 }
+    var modeTitle: String { mode == "percent" ? "百分比" : "天数" }
+
+    var valid: Bool {
+        guard (1970...2100).contains(year), (1...12).contains(month), (1...31).contains(day) else { return false }
+        guard targetDays >= 0, targetDays <= 100000 else { return false }
+        var dc = DateComponents()
+        dc.year = year; dc.month = month; dc.day = day
+        guard let date = Calendar.current.date(from: dc) else { return false }
+        // 记录日必须是真实存在的日期：Calendar 会把 2/31 归一到 3/3，这里要挡掉
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return c.year == year && c.month == month && c.day == day
+    }
+}
+
+struct RecordDayProgress {
+    var elapsedDays: Int        // 从起始日到今天已记录的自然日
+    var startKey: String        // yyyy-MM-dd
+    var milestoneStep: Int      // 里程碑步长（自定义目标或 100 天）
+    var milestoneDone: Int      // 当前里程碑内已走天数
+    var daysToMilestone: Int    // 距下一个里程碑
+    var milestoneIndex: Int     // 已完成的里程碑个数
+    var ratio: Double           // 0...1，里程碑进度
+    var started: Bool           // 起始日是否已到（未来日期 → false）
+    var span: ElapsedSpan = ElapsedSpan()   // 2.4：累计时长（X 年 Y 个月 Z 天）
+}
+
+/// 纪念日进度：起点为某个历史日期，按自然日累计。
+/// 2.4 起主展示改成「累计时长」，里程碑只作为附带信息保留。
+func recordDayProgress(_ item: RecordDayItem, now: Date = Date()) -> RecordDayProgress? {
+    guard item.valid, let start = makeDay(year: item.year, month: item.month, day: item.day) else { return nil }
+    let cal = Calendar.current
+    let today = cal.startOfDay(for: now)
+    let elapsed = max(0, calendarDays(from: start, to: today))
+    let step = max(1, item.milestoneStep)
+    let remainder = elapsed % step
+    // 正好落在里程碑当天：显示 100%，第二天再归零重新走
+    let done = (elapsed > 0 && remainder == 0) ? step : remainder
+    return RecordDayProgress(
+        elapsedDays: elapsed,
+        startKey: dateKey(start),
+        milestoneStep: step,
+        milestoneDone: done,
+        daysToMilestone: step - done,
+        milestoneIndex: elapsed / step,
+        ratio: min(1, Double(done) / Double(step)),
+        started: start <= today,
+        span: elapsedSpan(from: start, to: now))
 }

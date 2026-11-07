@@ -1,117 +1,39 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="h-bg" x1="0.1" y1="0" x2="0.85" y2="1">
-      <stop offset="0" stop-color="#36557F"/>
-      <stop offset="0.38" stop-color="#1C3557"/>
-      <stop offset="0.72" stop-color="#0D1B2E"/>
-      <stop offset="1" stop-color="#050B14"/>
+    <linearGradient id="f-bg" x1="0.12" y1="0" x2="0.88" y2="1">
+      <stop offset="0" stop-color="#62B0F8"/>
+      <stop offset="1" stop-color="#2C71D8"/>
     </linearGradient>
-
-    <linearGradient id="h-top" gradientUnits="userSpaceOnUse" x1="512" y1="110" x2="512" y2="560">
-      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.26"/>
-      <stop offset="0.30" stop-color="#CFE2FF" stop-opacity="0.10"/>
-      <stop offset="0.65" stop-color="#CFE2FF" stop-opacity="0.02"/>
-      <stop offset="1"    stop-color="#CFE2FF" stop-opacity="0"/>
-    </linearGradient>
-
-    <linearGradient id="h-rim" x1="0.08" y1="0" x2="0.3" y2="1">
-      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.88"/>
-      <stop offset="0.10" stop-color="#FFFFFF" stop-opacity="0.46"/>
-      <stop offset="0.34" stop-color="#B9D6FF" stop-opacity="0.16"/>
-      <stop offset="0.62" stop-color="#FFFFFF" stop-opacity="0.08"/>
-      <stop offset="0.88" stop-color="#FFFFFF" stop-opacity="0.14"/>
-      <stop offset="1"    stop-color="#FFE3A8" stop-opacity="0.30"/>
-    </linearGradient>
-
-    <linearGradient id="h-gold" x1="0.14" y1="0.02" x2="0.86" y2="1">
-      <stop offset="0"    stop-color="#FFF7D4"/>
-      <stop offset="0.20" stop-color="#FFDD68"/>
-      <stop offset="0.52" stop-color="#FFB01F"/>
-      <stop offset="0.80" stop-color="#F29100"/>
-      <stop offset="1"    stop-color="#DA7C00"/>
-    </linearGradient>
-
-    <linearGradient id="h-sheen" gradientUnits="userSpaceOnUse" x1="512" y1="308" x2="512" y2="620">
-      <stop offset="0"    stop-color="#FFFFFF" stop-opacity="0.60"/>
-      <stop offset="0.22" stop-color="#FFF6D0" stop-opacity="0.24"/>
-      <stop offset="0.55" stop-color="#FFF6D0" stop-opacity="0.04"/>
-      <stop offset="1"    stop-color="#FFF6D0" stop-opacity="0"/>
-    </linearGradient>
-
-    <linearGradient id="h-bar" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#FFEFAE"/>
-      <stop offset="0.55" stop-color="#FFC93C"/>
-      <stop offset="1" stop-color="#EE8F00"/>
-    </linearGradient>
-
-    <!-- 凹槽内阴影 -->
-    <linearGradient id="h-groove" gradientUnits="userSpaceOnUse" x1="512" y1="748" x2="512" y2="786">
-      <stop offset="0"   stop-color="#000000" stop-opacity="0.30"/>
-      <stop offset="0.55" stop-color="#000000" stop-opacity="0.10"/>
-      <stop offset="1"   stop-color="#000000" stop-opacity="0"/>
-    </linearGradient>
-
-    <!-- 底部内阴影平滑蒙版（替代硬 clip） -->
-    <linearGradient id="h-mb" gradientUnits="userSpaceOnUse" x1="512" y1="380" x2="512" y2="800">
-      <stop offset="0"    stop-color="#000000"/>
-      <stop offset="0.42" stop-color="#595959"/>
-      <stop offset="1"    stop-color="#FFFFFF"/>
-    </linearGradient>
-    <mask id="h-mask-bottom">
-      <rect x="0" y="0" width="1024" height="1024" fill="url(#h-mb)"/>
-    </mask>
-
-    <filter id="h-b40" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="40"/></filter>
-    <filter id="h-b26" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="26"/></filter>
-    <filter id="h-b16" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="16"/></filter>
-    <filter id="h-b8"  x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="8"/></filter>
-
-    <clipPath id="h-sq"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <clipPath id="f-sq">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
   </defs>
 
-  <g clip-path="url(#h-sq)">
-    <rect x="100" y="100" width="824" height="824" fill="url(#h-bg)"/>
-    <rect x="100" y="100" width="824" height="500" fill="url(#h-top)"/>
+  <g clip-path="url(#f-sq)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#f-bg)"/>
 
-    <!-- 底部内阴影（蒙版平滑） -->
-    <g mask="url(#h-mask-bottom)">
-      <rect x="100" y="100" width="824" height="824" rx="185" fill="none"
-            stroke="#000000" stroke-opacity="0.55" stroke-width="66" filter="url(#h-b26)"/>
+    <!-- 左右各一半：左半微提亮、右半微压暗，中缝一条极淡的线 -->
+    <rect x="100" y="100" width="412" height="824" fill="#FFFFFF" fill-opacity="0.05"/>
+    <rect x="512" y="100" width="412" height="824" fill="#08182E" fill-opacity="0.04"/>
+    <path d="M512 312 L512 712" stroke="#FFFFFF" stroke-opacity="0.25" stroke-width="4"/>
+
+    <!-- 左半：人民币符号 -->
+    <g stroke="#FFFFFF" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M226 368 L306 462"/>
+      <path d="M386 368 L306 462"/>
+      <path d="M306 462 L306 664"/>
+      <path d="M240 526 L372 526"/>
+      <path d="M240 600 L372 600"/>
     </g>
 
-    <ellipse cx="152" cy="540" rx="86" ry="320" fill="#000000" fill-opacity="0.18" filter="url(#h-b40)"/>
-
-    <!-- 内容组：整体下移 18，改善重心 -->
-    <g>
-      <!-- ¥ 投影 -->
-      <path d="M364 298 L512 448 L660 298 M512 448 L512 680 M396 546 L628 546 M396 618 L628 618"
-            fill="none" stroke="#000000" stroke-opacity="0.45" stroke-width="62"
-            stroke-linecap="round" stroke-linejoin="round" transform="translate(0,10)" filter="url(#h-b16)"/>
-
-      <!-- ¥ 主体 -->
-      <path d="M364 298 L512 448 L660 298 M512 448 L512 680 M396 546 L628 546 M396 618 L628 618"
-            fill="none" stroke="url(#h-gold)" stroke-width="62"
-            stroke-linecap="round" stroke-linejoin="round"/>
-
-      <!-- ¥ 统一高光 -->
-      <path d="M364 298 L512 448 L660 298 M512 448 L512 680 M396 546 L628 546 M396 618 L628 618"
-            fill="none" stroke="url(#h-sheen)" stroke-width="34"
-            stroke-linecap="round" stroke-linejoin="round" transform="translate(0,-5)" filter="url(#h-b8)"/>
-
-      <!-- 进度条凹槽 -->
-      <rect x="252" y="748" width="520" height="38" rx="19" fill="#FFFFFF" fill-opacity="0.10"/>
-      <rect x="252" y="748" width="520" height="38" rx="19" fill="url(#h-groove)"/>
-      <rect x="253" y="749" width="518" height="36" rx="18" fill="none" stroke="#FFFFFF" stroke-opacity="0.26" stroke-width="2"/>
-
-      <!-- 进度填充 -->
-      <rect x="254" y="750" width="306" height="34" rx="17" fill="url(#h-bar)"/>
-      <rect x="270" y="757" width="274" height="11" rx="5.5" fill="#FFFFFF" fill-opacity="0.62"/>
+    <!-- 右半：沙漏（上下横梁 + 交叉腰身，线框） -->
+    <g stroke="#FFFFFF" stroke-width="46" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M640 362 L796 362"/>
+      <path d="M640 662 L796 662"/>
     </g>
-
-    <!-- 边缘镜面 -->
-    <rect x="103" y="103" width="818" height="818" rx="182" fill="none"
-          stroke="url(#h-rim)" stroke-width="7"/>
-    <rect x="110" y="110" width="804" height="804" rx="176" fill="none"
-          stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2"/>
+    <g stroke="#FFFFFF" stroke-width="42" stroke-linecap="round" fill="none">
+      <path d="M656 388 L780 636"/>
+      <path d="M780 388 L656 636"/>
+    </g>
   </g>
 </svg>
