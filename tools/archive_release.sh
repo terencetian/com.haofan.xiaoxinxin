@@ -50,7 +50,8 @@ fi
 # ---------- 读 dmg 内的版本与 Build，确认不是张冠李戴 ----------
 read_plist() {
   local mnt ver build
-  mnt=$(hdiutil attach "$1" -nobrowse -readonly 2>/dev/null | tail -1 | awk '{print $NF}')
+  # hdiutil 输出是按 TAB 分列的，最后一段才是挂载点；用 awk 默认按空白切分会被卷名里的空格切坏
+  mnt=$(hdiutil attach "$1" -nobrowse -readonly 2>/dev/null | tail -1 | awk -F'\t' '{print $NF}')
   [ -z "$mnt" ] && return 0
   local pl="$mnt/小薪薪.app/Contents/Info.plist"
   if [ -f "$pl" ]; then
