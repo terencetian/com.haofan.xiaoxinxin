@@ -427,16 +427,21 @@ struct SalaryProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<SalaryEntry>) -> Void) {
         let snap = Snap.load()
         var entries: [SalaryEntry] = [SalaryEntry(date: .now, snap: snap)]
-        // 计费中：未来 20 分钟每秒一个 entry —— 金额/进度环看起来是实时走数的。
+        // 计费中：先按秒生成 10 分钟（金额/进度环实时走数），再按 30 秒一档铺到 75 分钟。
         // 小组件里 TimelineView 的 periodic 调度会被系统忽略，唯一可行的办法就是预生成 entry；
         // entry 只是 (date, snap)，预计算开销可忽略。
+        // 条目必须覆盖到主 App 的下一次兜底强刷（每小时），否则时间线在两次刷新之间过期，
+        // WidgetKit 会把实例打回灰色占位图且不自愈（2.6.3 前的反复变灰就是这来的）。
         if snap.working {
             for s in 1...(10 * 60) {
                 entries.append(SalaryEntry(date: .now.addingTimeInterval(Double(s)), snap: snap))
             }
-            completion(Timeline(entries: entries, policy: .after(.now.addingTimeInterval(9 * 60))))
+            for s in stride(from: 12 * 60, through: 75 * 60, by: 30) {
+                entries.append(SalaryEntry(date: .now.addingTimeInterval(Double(s)), snap: snap))
+            }
+            completion(Timeline(entries: entries, policy: .after(.now.addingTimeInterval(70 * 60))))
         } else {
-            completion(Timeline(entries: entries, policy: .after(.now.addingTimeInterval(30 * 60))))
+            completion(Timeline(entries: entries, policy: .after(.now.addingTimeInterval(70 * 60))))
         }
     }
     private var demoSnap: Snap {
@@ -911,7 +916,10 @@ struct MoneyWidget: Widget {
 
 struct DaysWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "DaysWidget", provider: SalaryProvider()) { entry in
+        // kind 用 v2 后缀：旧 "DaysWidget" 在 WidgetKit 数据库里带着多日 reload 失败的
+        // 历史状态，全新实例都只出占位图（MoneyWidget 同 Provider 同进程却正常），
+        // 换新 kind 等于绕开被毒化的记录。代价是老用户要重新添加一次 DAYS 组件。
+        StaticConfiguration(kind: "DaysWidgetV2", provider: SalaryProvider()) { entry in
             DaysSwitch(entry: entry)
                 .widgetURL(URL(string: "xiaoxinxin://days"))
         }

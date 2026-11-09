@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>小薪薪</string>
 	<key>CFBundleGetInfoString</key>
-	<string>小薪薪 2.6.0 · Your Money / Your Days · 开发者 逍狗屁屁 · 让每一秒都看得见价值</string>
+	<string>小薪薪 2.6.3 · Your Money / Your Days · 开发者 逍狗屁屁 · 让每一秒都看得见价值</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.6.2</string>
+	<string>2.6.3</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,7 +30,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>43</string>
+	<string>44</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
@@ -40,6 +40,6 @@
 	<key>XinXinDeveloperTagline</key>
 	<string>让每一秒都看得见价值</string>
 	<key>XinXinReleaseDate</key>
-	<string>2026-11-07</string>
+	<string>2026-11-09</string>
 </dict>
 </plist>

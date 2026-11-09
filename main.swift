@@ -79,7 +79,7 @@ let DEV_TAGLINE = "让每一秒都看得见价值"
 // 版本号单一来源 = Info.plist 的 CFBundleShortVersionString / CFBundleVersion（plutil 改一处，界面全跟）
 // 裸二进制（脱离 bundle 跑自检）读不到 Info.plist 时用下面的兜底值
 let APP_VERSION = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.6.2"
+    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.6.3"
 let APP_BUILD = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
     ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "43"
 
@@ -108,6 +108,9 @@ struct ReleaseRecord: Identifiable {
     let copyright: String
 }
 let RELEASE_HISTORY: [ReleaseRecord] = [
+    .init(version: "2.6.3", build: "44", date: "2026-11-09",
+          theme: "修中尺寸小组件反复变灰骨架：强刷时间线从每 5 分钟降到每小时，不再烧穿系统刷新预算",
+          copyright: "WidgetKit 每天只给约 40-50 次刷新额度，旧版 5 分钟一刷一天 288 次，额度烧完时间线过期就被系统打回占位图；现改为事件驱动刷新 + 每小时兜底"),
     .init(version: "2.6.2", build: "43", date: "2026-11-08",
           theme: "拖窗口跟手了：不再逐帧搬窗口，改由系统拖窗循环处理；顶部 / 底部各一条固定拖拽带，窗口在后台点哪儿都不会再沉下去",
           copyright: "拖拽改走 performDrag（实测拖 +120,-80 窗口就走 +120,-80；旧版只走一半）。空白处点击也补上兜底"),
@@ -1035,7 +1038,11 @@ final class EarnModel: ObservableObject {
         beat.setEventHandler { [weak self] in
             guard let self else { return }
             self.snapBeat += 1
-            self.writeWidgetSnapshot(reload: self.snapBeat % 20 == 0)   // 每 5 分钟强刷一次时间线
+            // 快照每 15 秒落一次（供扩展的停表冻结逻辑），但强刷时间线改为每小时一次：
+            // WidgetKit 的刷新预算每天只有约 40-50 次，旧版 5 分钟一刷（288 次/天）把额度
+            // 烧穿后，时间线过期就续不上，实例被系统打回灰色占位图且不再自愈。
+            // 打卡/改薪/换主题等关键事件各自已有 reload: true，这里只做低频兜底。
+            self.writeWidgetSnapshot(reload: self.snapBeat % 240 == 0)   // 每 60 分钟兜底强刷
         }
         beat.resume()
         snapTimer = beat
@@ -1127,9 +1134,9 @@ final class EarnModel: ObservableObject {
         }
         tickCount += 1
         if tickCount % 900 == 0 { writeWidgetSnapshot() }   // 30fps 计时 → 约每 30 秒落一次快照
-        // 每 5 分钟强制刷新一次小组件时间线：小组件自身只有 10 分钟的预生成 entry，
-        // 靠这条心跳兜住 chronod 不按期 reload 的情况
-        if tickCount % 9000 == 0 { writeWidgetSnapshot(reload: true) }
+        // 计费中每小时兜底强刷一次（时间线已预生成 75 分钟条目，见 Widget/SalaryWidget.swift）；
+        // 每 5 分钟强刷会烧穿 WidgetKit 日刷新预算，导致组件过期后被打回占位图（2.6.3 修）
+        if tickCount % 108000 == 0 { writeWidgetSnapshot(reload: true) }
     }
 
     private func spawnGain() {
@@ -1272,6 +1279,7 @@ final class EarnModel: ObservableObject {
         logText = wasWorking ? "跨入新的一天，今日累计已重置，继续计费"
                              : "新的一天，今日累计已重置"
         persist()
+        writeWidgetSnapshot(reload: true)   // 跨天必须立刻叫醒小组件，否则最多 1 小时显示昨天的累计
     }
 
     // 到点自动下班：本段计费开始于计划下班之前、现在已过下班时刻 → 自动打卡下班
