@@ -23,6 +23,7 @@ echo "[2/7] 编译小组件扩展（入口必须是 -e _NSExtensionMain，和 Xc
 # appex 的入口必须是 _NSExtensionMain（Xcode 对 appex 也设 LD_ENTRY_POINT=_NSExtensionMain）
 # 用 @main 生成的 main 会绕过 NSExtension 宿主上下文，在 _EXRunningExtension 引导阶段 trap
 swiftc -O -parse-as-library -sdk "$SDK" -target arm64-apple-macos14.0 \
+  -Xfrontend -disable-sandbox \
   -Xlinker -e -Xlinker _NSExtensionMain \
   Widget/SalaryWidget.swift -o "$STAGE/Contents/PlugIns/SalaryWidget.bin"
 
@@ -30,6 +31,7 @@ echo "[3/7] 编译主程序"
 osascript -e 'tell application "小薪薪" to quit' >/dev/null 2>&1 || true
 sleep 1
 swiftc -O -sdk "$SDK" -target arm64-apple-macos14.0 \
+  -Xfrontend -disable-sandbox \
   main.swift Logic.swift -o "$STAGE/Contents/MacOS/小薪薪"
 
 echo "[4/7] 组装 appex"

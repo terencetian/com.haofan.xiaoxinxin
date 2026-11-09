@@ -43,7 +43,10 @@ struct LogicTests {
         // 费率口径：月薪 ÷ 工作日 ÷ 8h ÷ 3600s
         let salary = 20000.0
         let perSec = salary / 21.0 / WORK_HOURS / 3600
-        assert(abs(perSec - 0.03286) < 0.0001, "每秒费率 \(perSec)")
+        // 20000 ÷ 21 天 ÷ 8h ÷ 3600s = 0.033068783...
+        // 旧断言写死 0.03286 是历史遗留值，与当前 8h 口径不符，会无条件失败
+        assert(abs(WORK_HOURS - 8.0) < 1e-9, "默认每日工时应为 8h，实际 \(WORK_HOURS)")
+        assert(abs(perSec - 0.03306878306878307) < 0.0001, "每秒费率 \(perSec)")
         print(String(format: "✅ 费率口径通过：月薪2万/21天 → ¥%.5f/秒", perSec))
 
         // 每日工时自定义：下班 − 上班 − 休息
@@ -62,12 +65,18 @@ struct LogicTests {
         func endAt(_ dateStr: String, _ hhmm: String, start: String = "09:00") -> String {
             timeStr(shiftEndTime(now: d(dateStr) + 3600, startStr: start, endStr: hhmm)!)  // +1h 进入当天
         }
-        func endDay(_ dateStr: String, _ hhmm: String, start: String = "09:00") -> String {
-            dateKey(shiftEndTime(now: d(dateStr) + 3600, startStr: start, endStr: hhmm)!)
+        func endDay(_ dateStr: String, _ hhmm: String, start: String = "09:00",
+                    hourOffset: Double = 1) -> String {
+            dateKey(shiftEndTime(now: d(dateStr) + hourOffset * 3600, startStr: start, endStr: hhmm)!)
         }
         assert(endAt("2026-11-05", "18:00") == "18:00", "同日班 → 当天 18:00")
         assert(endDay("2026-11-05", "18:00") == "2026-11-05", "同日班不跨天")
-        assert(endDay("2026-11-05", "06:00", start: "22:00") == "2026-11-06", "跨零点班（22 点后打卡）→ 次日 06:00")
+        // 用例名写的是「22 点后打卡」，旧构造却是 +1h（凌晨 1 点，属于前晚的班），
+        // 按口径应返回当天 06:00，期望却写次日 —— 把 now 改成 23:00 才是真正要测的场景
+        assert(endDay("2026-11-05", "06:00", start: "22:00", hourOffset: 23) == "2026-11-06",
+               "跨零点班（22 点后打卡）→ 次日 06:00")
+        assert(endDay("2026-11-05", "06:00", start: "22:00") == "2026-11-05",
+               "跨零点班（凌晨仍属昨晚班次）→ 当天 06:00")
         // 跨零点班、现在还在白天（未过当天 start）→ 当天 end
         let noonEnd = shiftEndTime(now: d("2026-11-05") + 12 * 3600, startStr: "22:00", endStr: "06:00")
         assert(noonEnd != nil && dateKey(noonEnd!) == "2026-11-05" && timeStr(noonEnd!) == "06:00",
@@ -254,6 +263,68 @@ struct LogicTests {
         check(recordDayProgress(RecordDayItem(name: "非法", year: 2026, month: 2, day: 31)) == nil,
               "非法日期应返回 nil")
         print("✅ 记录日 12 项通过（累计天数 / 自定义目标 / 里程碑当天 / 未来日期 / 非法）")
+
+        // 事件拖动排序（EventOrder）：拖拽落点 / 上移下移 / 置顶置底 / 边界与容错
+        struct Box: Identifiable, Equatable { let id: String }
+        func fresh() -> [Box] { ["A", "B", "C", "D"].map { Box(id: $0) } }
+        func names(_ v: [Box]) -> String { v.map(\.id).joined() }
+        var boxes = fresh()
+
+        check(EventOrder.place(&boxes, id: "A", before: "C"), "A 拖到 C 前应返回 true")
+        check(names(boxes) == "BACD", "往下拖：A 插到 C 之前 → BACD，实际 \(names(boxes))")
+        check(EventOrder.place(&boxes, id: "D", before: "B"), "D 拖到 B 前应返回 true")
+        check(names(boxes) == "DBAC", "往上拖：D 插到 B 之前 → DBAC，实际 \(names(boxes))")
+        // 悬停同一行重复触发必须幂等，不能把顺序推着走
+        check(!EventOrder.place(&boxes, id: "D", before: "B") || names(boxes) == "DBAC",
+              "重复落在同一行不应改变顺序")
+        check(!EventOrder.place(&boxes, id: "A", before: "A"), "源与落点相同应拒绝")
+        check(names(boxes) == "DBAC", "非法拖拽不应改变顺序")
+        check(!EventOrder.place(&boxes, id: "A", before: "Z"), "落点不存在应返回 false")
+        check(!EventOrder.place(&boxes, id: "Z", before: "A"), "源不存在应返回 false")
+        check(names(boxes) == "DBAC", "目标缺失时应原样还原，实际 \(names(boxes))")
+
+        boxes = fresh()
+        check(EventOrder.shift(&boxes, id: "A", by: 1), "A 下移应成功")
+        check(names(boxes) == "BACD", "下移一格 → BACD")
+        check(!EventOrder.shift(&boxes, id: "B", by: -1), "首项上移应被夹紧并拒绝")
+        check(!EventOrder.shift(&boxes, id: "D", by: 1), "末项下移应被夹紧并拒绝")
+        check(EventOrder.place(&boxes, id: "C", at: 99), "置底越界应夹紧")
+        check(names(boxes) == "BADC", "置底 → BADC，实际 \(names(boxes))")
+        check(EventOrder.place(&boxes, id: "D", at: -5), "置顶越界应夹紧")
+        check(names(boxes) == "DBAC", "置顶 → DBAC，实际 \(names(boxes))")
+        check(boxes.count == 4 && Set(boxes.map(\.id)) == Set(["A", "B", "C", "D"]),
+              "任何重排都不能丢事件或产生重复 id")
+        print("✅ 事件排序 14 项通过（拖拽落点 / 幂等 / 上下移 / 置顶置底 / 越界夹紧 / 容错）")
+
+        // MARK: - 午休剔除（2026-11-09 修：9:00–18:00 休 60 分，16:38 曾算成 95%）
+        func billable(_ from: Date, _ to: Date,
+                      start: String = "09:00", end: String = "18:00",
+                      breakStart: String = "12:00", brk: Double = 60) -> Double {
+            billableSeconds(from: from, to: to, startStr: start, endStr: end,
+                            breakStartStr: breakStart, breakMinutes: brk)
+        }
+        let workDay = d("2026-11-09")
+        func at(_ h: Int, _ m: Int, _ dayOffset: Int = 0) -> Date {
+            let base = Calendar.current.date(byAdding: .day, value: dayOffset, to: workDay)!
+            return Calendar.current.date(bySettingHour: h, minute: m, second: 0, of: base)!
+        }
+        let afterLunch = billable(at(9, 0), at(16, 38))
+        check(abs(afterLunch / 60 - 398) < 0.01,
+              "16:38 应计 398 分钟（458 墙钟 − 60 午休），实际 \(afterLunch / 60)")
+        check(abs(afterLunch / (8 * 3600) - 0.8292) < 0.001,
+              "进度应约 82.9%，不是 95%，实际 \(afterLunch / (8 * 3600) * 100)%")
+        check(abs(billable(at(9, 0), at(12, 0)) / 3600 - 3) < 0.001, "12:00 应正好 3 小时")
+        check(abs(billable(at(9, 0), at(12, 59)) / 3600 - 3) < 0.001, "午休期间进度冻结，不涨也不倒退")
+        check(abs(billable(at(9, 0), at(18, 0)) / 3600 - 8) < 0.001, "18:00 应正好 8 小时 = 100%")
+        check(abs(billable(at(9, 0), at(19, 0)) / 3600 - 9) < 0.001, "下班后加班按 1:1 计")
+        check(abs(billable(at(9, 0), at(16, 38), breakStart: "07:00") / 60 - 398) < 0.01,
+              "休息起点落在班次外应回退「有效工时对半分」")
+        let nightStart = at(22, 0)
+        let nightNow = at(2, 30, 1)
+        check(abs(billableSeconds(from: nightStart, to: nightNow, startStr: "22:00", endStr: "06:00",
+                                  breakStartStr: "02:00", breakMinutes: 60) / 60 - 240) < 0.01,
+              "跨零点班次休 02:00–03:00，02:30 应计 4 小时")
+        print("✅ 午休剔除 8 项通过（分子分母同口径 / 午休冻结 / 下班 100% / 加班 1:1 / 跨零点 / 班次外回退）")
 
         if failed == 0 {
             print("\n=== ALL TESTS PASSED ===")

@@ -160,6 +160,64 @@ func shiftStartTime(now: Date, startStr: String, endStr: String) -> Date? {
 // 班次标识：以计划上班时刻所在日期为准，跨零点班次的前后半夜算同一个班次
 func shiftKey(_ start: Date) -> String { dateKey(start) }
 
+// MARK: - 午休窗口与可计费时长（三端同口径）
+
+private func clockComps(_ s: String) -> (Int, Int)? {
+    let p = s.trimmingCharacters(in: .whitespaces).split(separator: ":")
+    guard p.count == 2, let h = Int(p[0]), let m = Int(p[1]),
+          h >= 0, h < 24, m >= 0, m < 60 else { return nil }
+    return (h, m)
+}
+
+// 班次内的休息区间。以前只有「休息时长」没有起点，结果分母扣了休息、分子按墙钟跑，
+// 9:00–18:00 休 60 分在 16:38 会算成 95%，实际应约 83%。
+// 现在按用户填的「休息开始」定位；时刻落在班次外（或非法）时回退「有效工时对半分」。
+func breakWindow(shiftStart: Date, shiftEnd: Date,
+                 breakStartStr: String, breakMinutes: Double) -> (start: Date, end: Date) {
+    let cal = Calendar.current
+    let span = shiftEnd.timeIntervalSince(shiftStart)
+    guard span > 0 else { return (shiftStart, shiftStart) }
+    let brk = min(max(0, breakMinutes) * 60, span)
+    guard brk > 0 else { return (shiftStart, shiftStart) }
+
+    var start: Date
+    if let (h, m) = clockComps(breakStartStr),
+       let t = cal.date(bySettingHour: h, minute: m, second: 0, of: shiftStart) {
+        start = t
+        // 跨零点班次（22:00–06:00 休 02:00–03:00）：休息时刻比上班早 → 落到次日
+        if start < shiftStart { start = cal.date(byAdding: .day, value: 1, to: start) ?? t }
+    } else {
+        start = shiftStart.addingTimeInterval((span - brk) / 2)
+    }
+    if start < shiftStart || start >= shiftEnd {
+        start = shiftStart.addingTimeInterval((span - brk) / 2)
+    }
+    if start.addingTimeInterval(brk) > shiftEnd {
+        start = shiftEnd.addingTimeInterval(-brk)
+    }
+    return (start, start.addingTimeInterval(brk))
+}
+
+// [from, to] 这段真实时间里真正计入工作的秒数：与休息区间重叠的部分不计，
+// 班次之外（提前到 / 加班）按 1:1 计。休息期间进度冻结而不是倒退，下班刚好 100%。
+func billableSeconds(from: Date, to: Date, startStr: String, endStr: String,
+                     breakStartStr: String, breakMinutes: Double) -> Double {
+    let wall = to.timeIntervalSince(from)
+    guard wall > 0 else { return 0 }
+    guard let s0 = shiftStartTime(now: from, startStr: startStr, endStr: endStr),
+          let s1 = shiftEndTime(now: from, startStr: startStr, endStr: endStr) else { return wall }
+
+    func overlap(_ a: Date, _ b: Date) -> Double {
+        let lo = max(from, a), hi = min(to, b)
+        return hi > lo ? hi.timeIntervalSince(lo) : 0
+    }
+    let win = breakWindow(shiftStart: s0, shiftEnd: s1,
+                          breakStartStr: breakStartStr, breakMinutes: breakMinutes)
+    let inShift = overlap(s0, s1)
+    let worked = overlap(s0, win.start) + overlap(win.end, s1)
+    return worked + max(0, wall - inShift)
+}
+
 // MARK: - 主色提取（图标吸色）
 func extractPalette(_ image: NSImage) -> (NSColor, NSColor)? {
     guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
@@ -492,4 +550,48 @@ func recordDayProgress(_ item: RecordDayItem, now: Date = Date()) -> RecordDayPr
         ratio: min(1, Double(done) / Double(step)),
         started: start <= today,
         span: elapsedSpan(from: start, to: now))
+}
+
+// MARK: - 事件顺序调整（倒计时 / 纪念日共用，纯逻辑、可被单测覆盖）
+//
+// 数组本身就是唯一的顺序来源：存盘直接 encode 整个数组，因此任何重排只要改数组，
+// 显示顺序与本机会话一致。activeCountdownId / activeRecordDayId 按 id 引用，不受位置影响。
+
+enum EventOrder {
+    /// 拖拽：把 id 插到 targetID 之前（先移除再按 id 重找落点，避免索引偏移）
+    static func place<T: Identifiable>(_ items: inout [T], id: T.ID, before targetID: T.ID) -> Bool
+    where T.ID: Equatable {
+        guard id != targetID,
+              let from = items.firstIndex(where: { $0.id == id }) else { return false }
+        let moved = items.remove(at: from)
+        guard let to = items.firstIndex(where: { $0.id == targetID }) else {
+            items.insert(moved, at: from)   // 目标已不存在 → 原样还原
+            return false
+        }
+        items.insert(moved, at: to)
+        return true
+    }
+
+    /// 菜单「上移 / 下移」：相对位移，越界自动夹紧
+    static func shift<T: Identifiable>(_ items: inout [T], id: T.ID, by delta: Int) -> Bool
+    where T.ID: Equatable {
+        guard let from = items.firstIndex(where: { $0.id == id }) else { return false }
+        return move(&items, from: from, to: from + delta)
+    }
+
+    /// 菜单「置顶 / 置底」：绝对位置，越界自动夹紧
+    static func place<T: Identifiable>(_ items: inout [T], id: T.ID, at index: Int) -> Bool
+    where T.ID: Equatable {
+        guard let from = items.firstIndex(where: { $0.id == id }) else { return false }
+        return move(&items, from: from, to: index)
+    }
+
+    static func move<T>(_ items: inout [T], from: Int, to: Int) -> Bool {
+        guard items.count > 1, from >= 0, from < items.count else { return false }
+        let dest = max(0, min(items.count - 1, to))
+        guard dest != from else { return false }
+        let moved = items.remove(at: from)
+        items.insert(moved, at: dest)
+        return true
+    }
 }

@@ -79,9 +79,9 @@ let DEV_TAGLINE = "让每一秒都看得见价值"
 // 版本号单一来源 = Info.plist 的 CFBundleShortVersionString / CFBundleVersion（plutil 改一处，界面全跟）
 // 裸二进制（脱离 bundle 跑自检）读不到 Info.plist 时用下面的兜底值
 let APP_VERSION = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.6.3"
+    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.6.5"
 let APP_BUILD = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "43"
+    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "46"
 
 /// 发版日期单一来源：Info.plist 的 XinXinReleaseDate（每次升版本一起改）。
 /// 脱离 bundle 跑自检时依次退回 Info.plist 文件修改日 → 当天，保证「跟随版本迭代」不会写死。
@@ -108,6 +108,12 @@ struct ReleaseRecord: Identifiable {
     let copyright: String
 }
 let RELEASE_HISTORY: [ReleaseRecord] = [
+    .init(version: "2.6.5", build: "46", date: "2026-11-09",
+          theme: "午休不再算工时：9:00–18:00 休 60 分钟，16:38 从 95% 回到 83%，18:00 正好 100%",
+          copyright: "分母按 8 小时、分子按墙钟 9 小时，两边口径不一致，午休还在进钱；现按「休息从几点开始」定位休息区间，金额 / 工时 / 月度累计 / 锁屏全部剔除。另修改月薪会清零当天累计、改工时直接重置起点导致已跑时长被抹掉"),
+    .init(version: "2.6.4", build: "45", date: "2026-11-09",
+          theme: "倒计时与纪念日支持修改已添加的事件；事件列表可按 ≡ 手柄拖动排序，或用 ⇅ 菜单上移 / 下移 / 置顶 / 置底",
+          copyright: "修掉编辑时 createdKey 被重置成今天（一次性倒计时进度起点被改）、纪念日编辑丢失 mode 与 targetDays 两个字段；编辑状态从全局 evEditing 拆成按类隔离的 evEditingKind，避免改倒计时把纪念日表单串掉"),
     .init(version: "2.6.3", build: "44", date: "2026-11-09",
           theme: "修中尺寸小组件反复变灰骨架：强刷时间线从每 5 分钟降到每小时，不再烧穿系统刷新预算",
           copyright: "WidgetKit 每天只给约 40-50 次刷新额度，旧版 5 分钟一刷一天 288 次，额度烧完时间线过期就被系统打回占位图；现改为事件驱动刷新 + 每小时兜底"),
@@ -465,6 +471,7 @@ final class EarnModel: ObservableObject {
     @Published var workStartText: String     // 上班时间 HH:mm
     @Published var workEndText: String       // 下班时间 HH:mm
     @Published var breakMinText: String      // 每日休息时长（分钟）
+    @Published var breakStartText: String    // 午休开始时刻 HH:mm（休息要真从工时里扣，光有时长扣不准）
     @Published var manualHoursText: String = ""  // 手动补录已上班小时数
     @Published var working = false
     @Published var displayEarned: Double = 0
@@ -539,6 +546,8 @@ final class EarnModel: ObservableObject {
     private var clockInAt: Date?
     private var lastGainMark: Double = 0
     private var workedBeforeSession: Double = 0   // 今日此前已完成计费段的累计秒数
+    /// 上一次的班次配置：改工时时要用旧参数把已跑的段结算掉
+    private var lastSchedule: (start: String, end: String, breakStart: String, breakMin: Double)?
     private var timer: Timer?
     private let ud: UserDefaults
     private var tickCount = 0
@@ -841,9 +850,18 @@ final class EarnModel: ObservableObject {
         privacyActive ? "--" : prefix + fmt(v, dec)
     }
     // 今日已工作秒数 = 已结束段 + 正在进行的计费段（重启后也不会漏算）
+    // 口径：墙钟时长去掉落在午休里的部分，否则分母扣了休息、分子没扣，下班会跑到 112%
     var workedSeconds: Double {
         guard working, let start = clockInAt else { return workedBeforeSession }
-        return workedBeforeSession + max(0, Date.now.timeIntervalSince(start))
+        return workedBeforeSession + billableElapsed(from: start)
+    }
+
+    /// [from, now] 内真正计入工作的秒数（剔除午休时段）
+    func billableElapsed(from start: Date, to now: Date = .now) -> Double {
+        billableSeconds(from: start, to: now,
+                        startStr: workStartText, endStr: workEndText,
+                        breakStartStr: breakStartText,
+                        breakMinutes: Double(Int(breakMinText) ?? 60))
     }
     var workedMinutes: Int { Int(workedSeconds / 60) }
     var totalWorkedHours: Double { workedSeconds / 3600 }
@@ -899,6 +917,7 @@ final class EarnModel: ObservableObject {
         workStartText = ud.string(forKey: "workStart") ?? "09:00"
         workEndText = ud.string(forKey: "workEnd") ?? "18:00"
         breakMinText = ud.string(forKey: "breakMin") ?? "60"
+        breakStartText = ud.string(forKey: "breakStart") ?? "12:00"
 
         // 2.0 配置读取（旧版本没有这些键 → 全部给兼容默认，升级不丢原有行为）
         customWeekdays = Set((ud.array(forKey: "customWeekdays") as? [Int]) ?? [2, 3, 4, 5, 6])
@@ -1127,7 +1146,7 @@ final class EarnModel: ObservableObject {
         autoClockInIfNeeded()
         autoClockOutIfNeeded()
         guard working, let start = clockInAt else { return }
-        displayEarned = baseEarned + Date.now.timeIntervalSince(start) * ratePerSec
+        displayEarned = baseEarned + billableElapsed(from: start) * ratePerSec
         if displayEarned - lastGainMark >= 0.01 {
             lastGainMark = displayEarned
             spawnGain()
@@ -1170,9 +1189,9 @@ final class EarnModel: ObservableObject {
         guard salary > 0 else { return }
         let now = Date.now
         if working, let start = clockInAt {
-            let elapsed = max(0, now.timeIntervalSince(start))
-            baseEarned += elapsed * ratePerSec
-            workedBeforeSession += elapsed
+            let billable = billableElapsed(from: start, to: now)
+            baseEarned += billable * ratePerSec
+            workedBeforeSession += billable
             displayEarned = baseEarned
             clockInAt = now
             lastGainMark = baseEarned
@@ -1190,9 +1209,10 @@ final class EarnModel: ObservableObject {
 
     func clockOut(auto: Bool = false) {
         guard working, let start = clockInAt else { return }
-        let elapsed = max(0, Date.now.timeIntervalSince(start))
-        baseEarned += elapsed * ratePerSec
-        workedBeforeSession += elapsed
+        let elapsed = max(0, Date.now.timeIntervalSince(start))     // 墙钟：加班时长按实际待在公司的时间算
+        let billable = billableElapsed(from: start)                  // 计费：扣掉午休
+        baseEarned += billable * ratePerSec
+        workedBeforeSession += billable
         // 手动加班段 / 本段开始于计划下班之后 → 计入加班时长
         var wasOvertime = manualOvertime
         if !wasOvertime, let end = scheduledEnd, start >= end { wasOvertime = true }
@@ -1325,15 +1345,21 @@ final class EarnModel: ObservableObject {
     }
 
     func onSalaryChanged() {
-        ud.set(salaryText, forKey: "salary")
-        baseEarned = 0
-        displayEarned = 0
-        lastGainMark = 0
-        workedBeforeSession = 0
-        if working {
+        // 旧月薪要先从存盘读出来：salary 已经跟着输入框变了，
+        // 结算当前段必须用旧费率。旧版这里直接 baseEarned = 0 / workedBeforeSession = 0，
+        // 改一次月薪就把今天已经赚到的钱和工时全抹掉了。
+        let oldSalary = Double(ud.string(forKey: "salary") ?? "") ?? salary
+        if working, let start = clockInAt {
+            let billable = billableElapsed(from: start)
+            let oldRate = oldSalary / Double(effectiveWorkDays) / effectiveHours / 3600
+            baseEarned += billable * oldRate
+            workedBeforeSession += billable
+            displayEarned = baseEarned
+            lastGainMark = baseEarned
             clockInAt = Date.now
-            logText = "↻ 月薪已更新，从现在重新计费"
+            logText = "↻ 月薪已更新，此前工时已按旧费率结算"
         }
+        ud.set(salaryText, forKey: "salary")
         persist()
     }
 
@@ -1342,26 +1368,41 @@ final class EarnModel: ObservableObject {
         rebaseCurrentSession("工作日天数已更新")
     }
 
-    // 费率相关的设置变化：正在计费的一段从现在重新起算，避免新旧费率混算
+    // 费率相关的设置变化：先把已跑的段结掉，再从这一刻按新费率起算
     private func rebaseCurrentSession(_ what: String) {
-        if working {
-            clockInAt = Date.now
+        if working, let start = clockInAt {
+            let billable = billableElapsed(from: start)
+            baseEarned += billable * ratePerSec
+            workedBeforeSession += billable
+            displayEarned = baseEarned
             lastGainMark = baseEarned
-            logText = "↻ \(what)，从现在按新费率计费"
+            clockInAt = Date.now
+            logText = "↻ \(what)，已跑工时会先结算，从现在按新费率计费"
         }
         persist()
     }
 
     func onScheduleChanged() {
+        // 工时变化会改变费率：先把已跑的这段按「旧配置」结掉，再从这一刻按新费率起算。
+        // 旧版直接 clockInAt = now，既不结算也不累计，改一次工时就把已经赚到的时长抹掉了。
+        if working, let start = clockInAt, let p = lastSchedule {
+            let oldHours = effectiveWorkHours(startStr: p.start, endStr: p.end, breakMinutes: p.breakMin)
+            let oldRate = oldHours > 0 ? ratePerDay / oldHours / 3600 : ratePerSec
+            let billable = billableSeconds(from: start, to: .now,
+                                           startStr: p.start, endStr: p.end,
+                                           breakStartStr: p.breakStart, breakMinutes: p.breakMin)
+            baseEarned += billable * oldRate
+            workedBeforeSession += billable
+            displayEarned = baseEarned
+            clockInAt = Date.now
+            lastGainMark = baseEarned
+            logText = "↻ 工作时长已更新，此前工时已结算，从现在按新费率计费"
+        }
+        lastSchedule = (workStartText, workEndText, breakStartText, Double(Int(breakMinText) ?? 60))
         ud.set(workStartText, forKey: "workStart")
         ud.set(workEndText, forKey: "workEnd")
         ud.set(breakMinText, forKey: "breakMin")
-        // 工时变化会改变费率：当前计费段从现在重新起算，保证金额不重复计算
-        if working {
-            clockInAt = Date.now
-            lastGainMark = baseEarned
-            logText = "↻ 工作时长已更新，从现在按新费率计费"
-        }
+        ud.set(breakStartText, forKey: "breakStart")
     }
 
     // 校正工时：把今天实际工作的总时长设为指定值（多记/少记均可），
@@ -1614,6 +1655,17 @@ final class EarnModel: ObservableObject {
         onCountdownsChanged()
     }
 
+    // MARK: 顺序调整（拖动 / 菜单，改完立刻写回本机存盘）
+    func placeCountdown(id: String, before targetID: String) {
+        if EventOrder.place(&countdowns, id: id, before: targetID) { onCountdownsChanged() }
+    }
+    func shiftCountdown(id: String, by delta: Int) {
+        if EventOrder.shift(&countdowns, id: id, by: delta) { onCountdownsChanged() }
+    }
+    func placeCountdown(id: String, at index: Int) {
+        if EventOrder.place(&countdowns, id: id, at: index) { onCountdownsChanged() }
+    }
+
     func setActiveCountdown(id: String) {
         activeCountdownId = id
         onCountdownsChanged()
@@ -1673,6 +1725,17 @@ final class EarnModel: ObservableObject {
     func removeRecordDay(id: String) {
         recordDays.removeAll { $0.id == id }
         onRecordDaysChanged()
+    }
+
+    // MARK: 顺序调整（拖动 / 菜单，改完立刻写回本机存盘）
+    func placeRecordDay(id: String, before targetID: String) {
+        if EventOrder.place(&recordDays, id: id, before: targetID) { onRecordDaysChanged() }
+    }
+    func shiftRecordDay(id: String, by delta: Int) {
+        if EventOrder.shift(&recordDays, id: id, by: delta) { onRecordDaysChanged() }
+    }
+    func placeRecordDay(id: String, at index: Int) {
+        if EventOrder.place(&recordDays, id: id, at: index) { onRecordDaysChanged() }
     }
 
     /// 2.4：二级页里改纪念日的名称 / 起始日期
@@ -2884,20 +2947,84 @@ enum DaysEventKind: String {
     }
 }
 
+// MARK: - 事件排序控件（设置页 / DAYS 二级页共用）
+
+/// 拖放落点：进入某一行时，把拖动源实时插到这一行之前。
+struct EventReorderDropDelegate: DropDelegate {
+    @Binding var draggingID: String?
+    let targetID: String
+    let onPlaceBefore: (String, String) -> Void
+
+    func validateDrop(info: DropInfo) -> Bool { draggingID != nil }
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func dropEntered(info: DropInfo) {
+        guard let src = draggingID, src != targetID else { return }
+        withAnimation(.easeInOut(duration: 0.12)) { onPlaceBefore(src, targetID) }
+    }
+    func performDrop(info: DropInfo) -> Bool { draggingID = nil; return true }
+}
+
+/// 一行两个控件：长按 ≡ 拖动排序；点 ⇅ 用菜单做等价调整（不依赖手势，保证一定可用）。
+struct EventSortControls: View {
+    let id: String
+    let index: Int
+    let count: Int
+    @Binding var draggingID: String?
+    let onShift: (Int) -> Void
+    let onPlaceAt: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(AppPalette.text.opacity(0.4))
+                .frame(width: 15, height: 20)
+                .contentShape(Rectangle())
+                .onDrag {
+                    draggingID = id
+                    return NSItemProvider(object: id as NSString)
+                }
+                .help("按住拖动，调整事件顺序")
+            Menu {
+                Button("上移") { onShift(-1) }.disabled(index == 0)
+                Button("下移") { onShift(1) }.disabled(index >= count - 1)
+                Divider()
+                Button("置顶") { onPlaceAt(0) }.disabled(index == 0)
+                Button("置底") { onPlaceAt(count - 1) }.disabled(index >= count - 1)
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(AppPalette.text.opacity(0.4))
+                    .frame(width: 15, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(.plain)
+            .fixedSize()
+            .disabled(count < 2)
+            .help("上移 / 下移 / 置顶 / 置底")
+        }
+        .fixedSize()
+    }
+}
+
 struct DaysEventManager: View {
     @ObservedObject var model: EarnModel
     @ObservedObject private var ui = SettingsUIState.shared
     let kind: DaysEventKind
+    @State private var draggingID: String? = nil
 
     private var count: Int {
         kind == .countdown ? model.countdowns.count : model.recordDays.count
     }
     private var open: Bool { ui.isEventManagerOpen(kind) }
     private var editingName: String? {
-        guard ui.evEditing else { return nil }
+        guard ui.isEditing(kind) else { return nil }
         if kind == .countdown { return model.activeCountdown?.name }
         return model.activeRecordDay?.name
     }
+
+    private var editing: Bool { ui.isEditing(kind) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2907,6 +3034,7 @@ struct DaysEventManager: View {
                 form.padding(.top, 8)
             }
         }
+        .onAppear { ui.ensureFormMatches(kind) }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Glass.fill(0.22)))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -2934,7 +3062,7 @@ struct DaysEventManager: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(open ? "收起事件管理" : "展开事件管理：新增 / 改名 / 改日期 / 删除")
+            .help(open ? "收起事件管理" : "展开事件管理：新增 / 编辑已有事件 / 改名 / 改日期 / 删除")
 
             Spacer(minLength: 0)
 
@@ -2942,7 +3070,7 @@ struct DaysEventManager: View {
                 Button { startNew() } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "plus").font(.system(size: 9, weight: .bold))
-                        Text(ui.evEditing ? "新建" : "新增").font(.system(size: 10, weight: .heavy))
+                        Text(editing ? "新建" : "新增").font(.system(size: 10, weight: .heavy))
                     }
                     .foregroundStyle(AppPalette.accent)
                     .padding(.horizontal, 8).padding(.vertical, 3)
@@ -2950,7 +3078,7 @@ struct DaysEventManager: View {
                     .overlay(Capsule().strokeBorder(AppPalette.accent.opacity(0.38), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
-                .help(ui.evEditing ? "切回新增模式" : "清空表单，准备新增")
+                .help(editing ? "切回新增模式" : "清空表单，准备新增")
             }
         }
     }
@@ -2972,10 +3100,16 @@ struct DaysEventManager: View {
                 } else {
                     ForEach(model.recordDays) { item in recordRow(item) }
                 }
+                if count > 1 {
+                    Text("按住 ≡ 手柄拖动排序，或点 ⇅ 菜单上移 / 下移 / 置顶 / 置底")
+                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 7)
+                }
             }
             .padding(.vertical, 1)
         }
-        .frame(height: min(CGFloat(count) * 38 + 2, 116))
+        .frame(height: min(CGFloat(count) * 38 + (count > 1 ? 14 : 2), 130))
         .clipped()
     }
 
@@ -2984,7 +3118,8 @@ struct DaysEventManager: View {
                      name: Binding<String>,
                      onSubmit: @escaping () -> Void,
                      detail: String,
-                     onDelete: @escaping () -> Void) -> some View {
+                     onDelete: @escaping () -> Void,
+                     sort: EventSortControls? = nil) -> some View {
         HStack(spacing: 6) {
             Button(action: onSelect) {
                 Image(systemName: active ? "largecircle.fill.circle" : "circle")
@@ -3005,6 +3140,7 @@ struct DaysEventManager: View {
                     .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
+            if let sort { sort }
             Button(action: onDelete) {
                 Image(systemName: "trash")
                     .font(.system(size: 10, weight: .bold))
@@ -3026,26 +3162,44 @@ struct DaysEventManager: View {
         let targetYear = item.year.map { "\($0)/" } ?? ""
         let timeText = item.hasCustomTime ? " " + item.targetTimeText : ""
         let stateText = p?.expired == true ? "已到期" : "还剩 \(p?.daysLeft ?? 0) 天"
+        let idx = model.countdowns.firstIndex(where: { $0.id == item.id }) ?? 0
         return row(active: model.activeCountdownId == item.id,
                    onSelect: { selectCountdown(item) },
                    name: Binding(get: { item.name },
                                  set: { model.renameCountdown(id: item.id, to: $0) }),
                    onSubmit: { model.commitCountdownName(id: item.id) },
                    detail: "\(targetYear)\(item.month)/\(item.day)\(timeText) · \(stateText) · \(item.modeTitle)",
-                   onDelete: { withAnimation { model.removeCountdown(id: item.id) } })
+                   onDelete: { withAnimation { model.removeCountdown(id: item.id) } },
+                   sort: EventSortControls(id: item.id, index: idx, count: model.countdowns.count,
+                                           draggingID: $draggingID,
+                                           onShift: { model.shiftCountdown(id: item.id, by: $0) },
+                                           onPlaceAt: { model.placeCountdown(id: item.id, at: $0) }))
+            .onDrop(of: [UTType.text],
+                    delegate: EventReorderDropDelegate(
+                        draggingID: $draggingID, targetID: item.id,
+                        onPlaceBefore: { src, target in model.placeCountdown(id: src, before: target) }))
     }
 
     private func recordRow(_ item: RecordDayItem) -> some View {
         let p = recordDayProgress(item)
         let dateText = String(format: "%04d/%d/%d", item.year, item.month, item.day)
         let stateText = p?.started == true ? "累计 \(p?.span.shortText ?? "")" : "未开始"
+        let idx = model.recordDays.firstIndex(where: { $0.id == item.id }) ?? 0
         return row(active: model.activeRecordDayId == item.id,
                    onSelect: { selectRecordDay(item) },
                    name: Binding(get: { item.name },
                                  set: { model.renameRecordDay(id: item.id, to: $0) }),
                    onSubmit: { model.commitRecordDayName(id: item.id) },
                    detail: "\(dateText) 起 · \(stateText)",
-                   onDelete: { withAnimation { model.removeRecordDay(id: item.id) } })
+                   onDelete: { withAnimation { model.removeRecordDay(id: item.id) } },
+                   sort: EventSortControls(id: item.id, index: idx, count: model.recordDays.count,
+                                           draggingID: $draggingID,
+                                           onShift: { model.shiftRecordDay(id: item.id, by: $0) },
+                                           onPlaceAt: { model.placeRecordDay(id: item.id, at: $0) }))
+            .onDrop(of: [UTType.text],
+                    delegate: EventReorderDropDelegate(
+                        draggingID: $draggingID, targetID: item.id,
+                        onPlaceBefore: { src, target in model.placeRecordDay(id: src, before: target) }))
     }
 
     // MARK: 表单（新增 / 编辑同一套）
@@ -3053,9 +3207,9 @@ struct DaysEventManager: View {
     private var form: some View {
         VStack(spacing: 6) {
             HStack(spacing: 6) {
-                Text(ui.evEditing ? "编辑" : "新增")
+                Text(editing ? "编辑" : "新增")
                     .font(.system(size: 9.5, weight: .heavy))
-                    .foregroundStyle(ui.evEditing ? AppPalette.accent : .secondary)
+                    .foregroundStyle(editing ? AppPalette.accent : .secondary)
                     .frame(width: 24, alignment: .leading)
                 TextField(kind == .countdown ? "名称，如 春节 / 项目上线" : "名称，如 在一起 / 入职", text: $ui.evName)
                     .textFieldStyle(.plain)
@@ -3094,18 +3248,23 @@ struct DaysEventManager: View {
                         .font(.system(size: 9)).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 }
+                HStack(spacing: 5) {
+                    tag("节点")
+                    field("每 N 天", text: $ui.evTarget, width: 50)
+                    Text("留空 = 每 100 天一个里程碑")
+                        .font(.system(size: 9)).foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
             }
             HStack(spacing: 6) {
-                if kind == .countdown {
-                    chip("按天数", on: !ui.evPercent) { ui.evPercent = false }
-                    chip("按百分比", on: ui.evPercent) { ui.evPercent = true }
-                }
+                chip("按天数", on: !ui.evPercent) { ui.evPercent = false }
+                chip("按百分比", on: ui.evPercent) { ui.evPercent = true }
                 Spacer(minLength: 0)
                 Button { submit() } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: ui.evEditing ? "checkmark" : "plus")
+                        Image(systemName: editing ? "checkmark" : "plus")
                             .font(.system(size: 9, weight: .bold))
-                        Text(ui.evEditing ? "保存" : "添加").font(.system(size: 11, weight: .heavy))
+                        Text(editing ? "保存" : "添加").font(.system(size: 11, weight: .heavy))
                     }
                     .foregroundStyle(AppPalette.onAccent)
                     .padding(.horizontal, 12).padding(.vertical, 5)
@@ -3163,34 +3322,17 @@ struct DaysEventManager: View {
     // MARK: 选择 / 提交
 
     private func startNew() {
-        ui.evEditing = false
         ui.resetEventForm()
-        ui.evPercent = false
     }
 
     private func selectCountdown(_ item: CountdownItem) {
         model.setActiveCountdown(id: item.id)
-        ui.evName = item.name
-        ui.evYear = item.year.map(String.init) ?? ""
-        ui.evMonth = "\(item.month)"
-        ui.evDay = "\(item.day)"
-        ui.evStartYear = item.startYear.map(String.init) ?? ""
-        ui.evStartMonth = item.startMonth.map(String.init) ?? ""
-        ui.evStartDay = item.startDay.map(String.init) ?? ""
-        ui.evTime = item.hasCustomTime ? item.targetTimeText : ""
-        ui.evPercent = item.mode == "percent"
-        ui.evEditing = true
-        ui.evError = nil
+        ui.loadCountdownForEditing(item)
     }
 
     private func selectRecordDay(_ item: RecordDayItem) {
         model.setActiveRecordDay(id: item.id)
-        ui.evName = item.name
-        ui.evStartYear = "\(item.year)"
-        ui.evStartMonth = "\(item.month)"
-        ui.evStartDay = "\(item.day)"
-        ui.evEditing = true
-        ui.evError = nil
+        ui.loadRecordDayForEditing(item)
     }
 
     private func submit() {
@@ -3204,13 +3346,15 @@ struct DaysEventManager: View {
             let m = Int(ui.evMonth.trimmingCharacters(in: .whitespaces)) ?? 0
             let d = Int(ui.evDay.trimmingCharacters(in: .whitespaces)) ?? 0
             let (hh, mm) = parseClock(ui.evTime)
+            // 编辑已有事件时沿用原创建日，否则一次性倒计时的进度起点会被重置成今天
+            let existing = editing ? model.activeCountdown : nil
             var item = CountdownItem(name: name, month: m, day: d,
                                      year: yText.isEmpty ? nil : Int(yText),
                                      mode: ui.evPercent ? "percent" : "days",
-                                     createdKey: dateKey(Date.now))
+                                     createdKey: existing?.createdKey ?? dateKey(Date.now))
             item.startYear = sy; item.startMonth = sm; item.startDay = sd
             item.targetHour = hh; item.targetMinute = mm
-            if ui.evEditing, let id = model.activeCountdownId.isEmpty ? nil : model.activeCountdownId {
+            if editing, let id = model.activeCountdownId.isEmpty ? nil : model.activeCountdownId {
                 if let err = model.updateCountdown(id: id, with: item) { ui.evError = err; return }
             } else {
                 if let err = model.addCountdown(item) { ui.evError = err; return }
@@ -3218,9 +3362,15 @@ struct DaysEventManager: View {
             }
         } else {
             guard let y = sy, let m = sm, let d = sd else { ui.evError = "请填完整的起始年月日"; return }
+            let targetText = ui.evTarget.trimmingCharacters(in: .whitespaces)
+            let targetDays = targetText.isEmpty ? 0 : (Int(targetText) ?? -1)
+            guard (0...100000).contains(targetDays) else {
+                ui.evError = "里程碑天数请填 1–100000，留空按 100 天"; return
+            }
             let item = RecordDayItem(name: name, year: y, month: m, day: d,
-                                     targetDays: 0, mode: "days")
-            if ui.evEditing, !model.activeRecordDayId.isEmpty {
+                                     targetDays: targetDays,
+                                     mode: ui.evPercent ? "percent" : "days")
+            if editing, !model.activeRecordDayId.isEmpty {
                 if let err = model.updateRecordDay(id: model.activeRecordDayId, with: item) { ui.evError = err; return }
             } else {
                 if let err = model.addRecordDay(item) { ui.evError = err; return }
@@ -3540,7 +3690,9 @@ final class SettingsUIState: ObservableObject {
     @Published var rdTarget = ""        // 空 = 自动 100 天里程碑
     @Published var rdPercent = false
     @Published var rdError: String?
-    // 2.4 Your Days 二级页内「事件管理」（倒计时 / 纪念日 共用一套表单，页面互斥不会同时出现）
+    // 2.4 Your Days 事件管理：倒计时 / 纪念日共用一套表单字段。
+    // evEditingKind 标记当前编辑的是哪一类；切到另一页时必须清掉，否则会把上一页的
+    // 「正在编辑」状态串过去，提交时误改到另一类的当前选中项。
     @Published var eventManagerOpen: Set<String> = []
     @Published var evName = ""
     @Published var evYear = ""
@@ -3550,9 +3702,10 @@ final class SettingsUIState: ObservableObject {
     @Published var evStartMonth = ""
     @Published var evStartDay = ""
     @Published var evTime = ""          // 目标时刻 HH:mm，留空 = 00:00
-    @Published var evTarget = ""
+    @Published var evTarget = ""        // 纪念日里程碑天数，空 = 100 天
     @Published var evPercent = false
     @Published var evEditing = false    // true = 表单正在编辑当前选中项
+    @Published var evEditingKind: String? = nil
     @Published var evError: String?
     @Published var privacyError: String?
     @Published var workdayError: String?
@@ -3625,12 +3778,57 @@ final class SettingsUIState: ObservableObject {
         evName = ""; evYear = ""; evMonth = ""; evDay = ""
         evStartYear = ""; evStartMonth = ""; evStartDay = ""
         evTime = ""; evTarget = ""; evError = nil
+        evPercent = false
+        evEditing = false
+        evEditingKind = nil
+    }
+
+    func isEditing(_ kind: DaysEventKind) -> Bool {
+        evEditing && evEditingKind == kind.rawValue
+    }
+
+    /// 二级页出现时调用：表单若属于另一类事件，就退回干净的新增态
+    func ensureFormMatches(_ kind: DaysEventKind) {
+        if let k = evEditingKind, k != kind.rawValue { resetEventForm() }
+    }
+
+    /// 把已有倒计时载入编辑表单（设置页与二级页事件管理共用）
+    func loadCountdownForEditing(_ item: CountdownItem) {
+        evName = item.name
+        evYear = item.year.map(String.init) ?? ""
+        evMonth = "\(item.month)"
+        evDay = "\(item.day)"
+        evStartYear = item.startYear.map(String.init) ?? ""
+        evStartMonth = item.startMonth.map(String.init) ?? ""
+        evStartDay = item.startDay.map(String.init) ?? ""
+        evTime = item.hasCustomTime ? item.targetTimeText : ""
+        evTarget = ""
+        evPercent = item.mode == "percent"
+        evEditing = true
+        evEditingKind = DaysEventKind.countdown.rawValue
+        evError = nil
+    }
+
+    /// 把已有纪念日载入编辑表单；显示方式与里程碑步长也要回填，编辑保存才不会被重置
+    func loadRecordDayForEditing(_ item: RecordDayItem) {
+        evName = item.name
+        evYear = ""; evMonth = ""; evDay = ""; evTime = ""
+        evStartYear = "\(item.year)"
+        evStartMonth = "\(item.month)"
+        evStartDay = "\(item.day)"
+        evTarget = item.targetDays > 0 ? "\(item.targetDays)" : ""
+        evPercent = item.mode == "percent"
+        evEditing = true
+        evEditingKind = DaysEventKind.anniversary.rawValue
+        evError = nil
     }
 }
 
 struct SettingsView: View {
     @ObservedObject var model: EarnModel
     @ObservedObject private var ui = SettingsUIState.shared
+    @State private var draggingCountdownID: String? = nil
+    @State private var draggingRecordID: String? = nil
 
     var body: some View {
         Group {
@@ -3727,6 +3925,7 @@ struct SettingsView: View {
                         }
                         HStack(spacing: 8) {
                             scheduleField(label: "休息", text: $model.breakMinText, placeholder: "60", width: 46, unit: "分钟")
+                            scheduleField(label: "从", text: $model.breakStartText, placeholder: "12:00", width: 50)
                             Spacer(minLength: 0)
                         }
                     }
@@ -3940,6 +4139,12 @@ struct SettingsView: View {
                     } else {
                         VStack(spacing: 4) {
                             ForEach(model.countdowns) { c in countdownRow(c) }
+                            if model.countdowns.count > 1 {
+                                Text("按住 ≡ 手柄拖动排序，或点 ⇅ 菜单上移 / 下移 / 置顶 / 置底")
+                                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 8)
+                            }
                         }
                         .padding(.top, 4)
                     }
@@ -3997,6 +4202,12 @@ struct SettingsView: View {
                     } else {
                         VStack(spacing: 4) {
                             ForEach(model.recordDays) { c in recordDayRow(c) }
+                            if model.recordDays.count > 1 {
+                                Text("按住 ≡ 手柄拖动排序，或点 ⇅ 菜单上移 / 下移 / 置顶 / 置底")
+                                    .font(.system(size: 9)).foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 8)
+                            }
                         }
                         .padding(.top, 4)
                     }
@@ -4765,6 +4976,20 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .help("切换天数 / 百分比显示")
+            EventSortControls(id: c.id,
+                              index: model.countdowns.firstIndex(where: { $0.id == c.id }) ?? 0,
+                              count: model.countdowns.count,
+                              draggingID: $draggingCountdownID,
+                              onShift: { model.shiftCountdown(id: c.id, by: $0) },
+                              onPlaceAt: { model.placeCountdown(id: c.id, at: $0) })
+            Button { editCountdownFromSettings(c) } label: {
+                Image(systemName: "pencil")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(AppPalette.accent)
+                    .frame(width: 20, height: 20).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("编辑「\(c.name)」的名称 / 日期 / 时刻 / 重复方式")
             Button { model.removeCountdown(id: c.id) } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 10, weight: .bold))
@@ -4777,6 +5002,25 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Glass.fill(0.2)))
+        .onDrop(of: [UTType.text],
+                delegate: EventReorderDropDelegate(
+                    draggingID: $draggingCountdownID, targetID: c.id,
+                    onPlaceBefore: { src, target in model.placeCountdown(id: src, before: target) }))
+    }
+
+    /// 设置页列表的「编辑」：跳到对应二级页，并把这一项载入事件管理的编辑表单
+    private func editCountdownFromSettings(_ c: CountdownItem) {
+        model.setActiveCountdown(id: c.id)
+        ui.loadCountdownForEditing(c)
+        ui.openEventManager(.countdown)
+        model.page = .countdown
+    }
+
+    private func editRecordDayFromSettings(_ c: RecordDayItem) {
+        model.setActiveRecordDay(id: c.id)
+        ui.loadRecordDayForEditing(c)
+        ui.openEventManager(.anniversary)
+        model.page = .recordDay
     }
 
     private func addCountdownTapped() {
@@ -4826,6 +5070,20 @@ struct SettingsView: View {
             }
             .buttonStyle(.plain)
             .help("切换天数 / 百分比显示")
+            EventSortControls(id: c.id,
+                              index: model.recordDays.firstIndex(where: { $0.id == c.id }) ?? 0,
+                              count: model.recordDays.count,
+                              draggingID: $draggingRecordID,
+                              onShift: { model.shiftRecordDay(id: c.id, by: $0) },
+                              onPlaceAt: { model.placeRecordDay(id: c.id, at: $0) })
+            Button { editRecordDayFromSettings(c) } label: {
+                Image(systemName: "pencil")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(AppPalette.accent)
+                    .frame(width: 20, height: 20).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("编辑「\(c.name)」的名称 / 起始日 / 显示方式 / 里程碑")
             Button { model.removeRecordDay(id: c.id) } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 10, weight: .bold))
@@ -4837,6 +5095,10 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Glass.fill(0.2)))
+        .onDrop(of: [UTType.text],
+                delegate: EventReorderDropDelegate(
+                    draggingID: $draggingRecordID, targetID: c.id,
+                    onPlaceBefore: { src, target in model.placeRecordDay(id: src, before: target) }))
     }
 
     private func addRecordDayTapped() {
