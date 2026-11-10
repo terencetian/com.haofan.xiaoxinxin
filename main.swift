@@ -79,9 +79,9 @@ let DEV_TAGLINE = "让每一秒都看得见价值"
 // 版本号单一来源 = Info.plist 的 CFBundleShortVersionString / CFBundleVersion（plutil 改一处，界面全跟）
 // 裸二进制（脱离 bundle 跑自检）读不到 Info.plist 时用下面的兜底值
 let APP_VERSION = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.6.5"
+    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.6.6"
 let APP_BUILD = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "46"
+    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "47"
 
 /// 发版日期单一来源：Info.plist 的 XinXinReleaseDate（每次升版本一起改）。
 /// 脱离 bundle 跑自检时依次退回 Info.plist 文件修改日 → 当天，保证「跟随版本迭代」不会写死。
@@ -108,6 +108,9 @@ struct ReleaseRecord: Identifiable {
     let copyright: String
 }
 let RELEASE_HISTORY: [ReleaseRecord] = [
+    .init(version: "2.6.6", build: "47", date: "2026-11-10",
+          theme: "小组件也扣午休了：主窗口 83%、小组件 95% 的口径差补平，休息时段进度冻结不再往上爬",
+          copyright: "2.6.5 只把主程序的工时口径改成可计费秒数，扩展那一路仍按墙钟累加：午休期间小组件百分比照涨，下班还会顶到 112%。现在主程序把本班次休息区间写进快照，扩展按重叠秒数扣除，停表烘焙同样剔休息"),
     .init(version: "2.6.5", build: "46", date: "2026-11-09",
           theme: "午休不再算工时：9:00–18:00 休 60 分钟，16:38 从 95% 回到 83%，18:00 正好 100%",
           copyright: "分母按 8 小时、分子按墙钟 9 小时，两边口径不一致，午休还在进钱；现按「休息从几点开始」定位休息区间，金额 / 工时 / 月度累计 / 锁屏全部剔除。另修改月薪会清零当天累计、改工时直接重置起点导致已跑时长被抹掉"),
@@ -640,6 +643,21 @@ final class EarnModel: ObservableObject {
             "metric": progressMetric.rawValue,
             "monthRatio": privacyActive ? monthHoursRatio : monthMoneyRatio,
         ]
+        // 2.6.4：小组件按工时算的进度也得剔掉午休。
+        // 主程序走 billableSeconds() 扣休息，小组件原来只有墙钟时长，午休那 1 小时照跑，
+        // 9:00–18:00 休 60 分在 16:38 会显示 95%（实际约 83%）。这里把本班次休息区间一并下发，
+        // 扩展自己按重叠秒数扣（它编不到 Logic.swift，只能拿数据说话）。
+        if let s0 = shiftStartTime(now: .now, startStr: workStartText, endStr: workEndText),
+           let s1 = shiftEndTime(now: .now, startStr: workStartText, endStr: workEndText) {
+            let win = breakWindow(shiftStart: s0, shiftEnd: s1,
+                                  breakStartStr: breakStartText,
+                                  breakMinutes: Double(Int(breakMinText) ?? 60))
+            dict["breakStartTS"] = win.start.timeIntervalSince1970
+            dict["breakEndTS"] = win.end.timeIntervalSince1970
+        } else {
+            dict["breakStartTS"] = 0
+            dict["breakEndTS"] = 0
+        }
         // 2.5：主题配色 + Your Days，小组件跟着 App 一起变色、一起显示日子
         dict["theme"] = [
             "id": themeId,
@@ -674,6 +692,9 @@ final class EarnModel: ObservableObject {
         if let d = try? JSONSerialization.data(withJSONObject: dict["days"] ?? [:]),
            let s = String(data: d, encoding: .utf8) { ud.set(s, forKey: "wDaysJSON") }
         ud.set(dict["monthRatio"] as? Double ?? 0, forKey: "wMonthRatio")
+        // 2.6.4：偏好域镜像也要带午休区间，否则走 PR 通道时又会退回墙钟口径
+        ud.set(dict["breakStartTS"] as? Double ?? 0, forKey: "wBreakStart")
+        ud.set(dict["breakEndTS"] as? Double ?? 0, forKey: "wBreakEnd")
         ud.synchronize()
         if reload {
             WidgetCenter.shared.reloadAllTimelines()

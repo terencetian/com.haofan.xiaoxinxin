@@ -153,6 +153,10 @@ struct Snap {
     var progressText: String = ""
     var metric: String = "todaySalary"
     var monthRatio: Double = 0
+    // 2.6.4：本班次的午休区间（主 App 按「上班 / 下班 / 休息开始 / 休息时长」算好后下发）。
+    // 扩展编不到 Logic.swift，靠这两个时刻自行扣除重叠部分，保证与主程序同口径。
+    var breakStart: Date?
+    var breakEnd: Date?
 
     // 2.5：主题配色 + Your Days
     var theme = ThemeSkin.preset("sky")
@@ -183,14 +187,21 @@ struct Snap {
         guard working, let start = clockInAt else { return baseEarned }
         return baseEarned + max(0, date.timeIntervalSince(start)) * ratePerSec
     }
-    func workedMinutes(at date: Date) -> Int {
-        var sec = workedBeforeSession
-        if working, let start = clockInAt { sec += max(0, date.timeIntervalSince(start)) }
-        return Int(sec / 60)
+    func workedMinutes(at date: Date) -> Int { Int(workedSeconds(at: date) / 60) }
+    /// 当前计费段里真正计入工作的秒数：墙钟时长去掉与午休区间重叠的部分。
+    /// 口径对齐主程序 Logic.swift 的 billableSeconds()——那边扣午休，这边以前没扣，
+    /// 所以午休期间小组件百分比会虚高（9:00–18:00 休 60 分，16:38 显示 95% 而非 83%）。
+    func billableSince(_ start: Date, to date: Date) -> Double {
+        let wall = date.timeIntervalSince(start)
+        guard wall > 0 else { return 0 }
+        guard let bs = breakStart, let be = breakEnd, be > bs else { return wall }
+        let lo = max(start, bs), hi = min(date, be)
+        let overlap = hi > lo ? hi.timeIntervalSince(lo) : 0
+        return max(0, wall - overlap)
     }
     func workedSeconds(at date: Date) -> Int {
         var sec = workedBeforeSession
-        if working, let start = clockInAt { sec += max(0, date.timeIntervalSince(start)) }
+        if working, let start = clockInAt { sec += billableSince(start, to: date) }
         return Int(sec)
     }
     func progress(at date: Double) -> Double {
@@ -280,6 +291,10 @@ struct Snap {
         s.plannedHours = (d.object(forKey: "wPlannedHours") as? Double) ?? 8
         s.progressRatio = d.double(forKey: "wProgressRatio")
         s.monthRatio = d.double(forKey: "wMonthRatio")
+        let bStart = d.double(forKey: "wBreakStart")
+        let bEnd = d.double(forKey: "wBreakEnd")
+        s.breakStart = bStart > 0 ? Date(timeIntervalSince1970: bStart) : nil
+        s.breakEnd = bEnd > 0 ? Date(timeIntervalSince1970: bEnd) : nil
         // 2.5：主题与日子走 JSON 字符串镜像
         if let raw = d.string(forKey: "wThemeJSON"), let data = raw.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -322,9 +337,12 @@ struct Snap {
     private static func applyFreeze(_ s: inout Snap, alive: Bool, stamp: Double) {
         let stale = stamp > 0 && Date.now.timeIntervalSince1970 - stamp > 180
         guard s.working, !alive || stale, let start = s.clockInAt else { return }
-        let extra = max(0, min(stamp, Date.now.timeIntervalSince1970) - start.timeIntervalSince1970)
-        s.baseEarned += extra * s.ratePerSec
-        s.workedBeforeSession += extra
+        // 停表烘焙同样要剔午休，否则 App 崩溃/退出时会把休息时间也算成工时（2.6.4）
+        let until = min(stamp, Date.now.timeIntervalSince1970)
+        let billable = until > start.timeIntervalSince1970
+            ? s.billableSince(start, to: Date(timeIntervalSince1970: until)) : 0
+        s.baseEarned += billable * s.ratePerSec
+        s.workedBeforeSession += billable
         s.working = false
         s.clockInAt = nil
     }
@@ -396,6 +414,8 @@ struct Snap {
         s.progressText = obj["progressText"] as? String ?? ""
         s.metric = obj["metric"] as? String ?? "todaySalary"
         s.monthRatio = obj["monthRatio"] as? Double ?? 0
+        s.breakStart = (obj["breakStartTS"] as? Double).flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil }
+        s.breakEnd = (obj["breakEndTS"] as? Double).flatMap { $0 > 0 ? Date(timeIntervalSince1970: $0) : nil }
         if let t = obj["theme"] as? [String: Any] { s.theme = theme(from: t) }
         if let d = obj["days"] as? [String: Any] {
             s.countdown = countdown(from: d["countdown"] as? [String: Any])
