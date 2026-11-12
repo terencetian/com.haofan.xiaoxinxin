@@ -1,5 +1,7 @@
 # 分刻 · Countmin · 记录每一段值得的时光
 
+> © 2026 逍狗屁屁 · 源代码依 [MIT License](LICENSE) 开放，应用图标、品牌标识与视觉素材保留所有权利（详见文末「版权与授权」）。
+>
 > ✏️ **2.7 起由「小薪薪」更名为「分刻 · Countmin」**：去掉了金钱词，内核仍是「时间、刻度、值得记录」。Bundle ID 与数据目录未变，老用户升级后打卡记录、设置、小组件全部原样保留。
 >
 > 🌐 **在线介绍页**：https://terencetian.github.io/com.haofan.xiaoxinxin/
@@ -194,10 +196,16 @@ entitlements 会被覆盖导致不注册）→ `ditto` 安装 → 重新注册�
 - **点顶栏不再掉层**：任何一次落点在窗口内的点击都会把窗口重新激活并置前。
 - **图标改为「对半」**：左半人民币符号、右半沙漏轮廓，同一线宽、同一高度。
 
-## 版权
+## 版权与授权
 
-© 2026 逍狗屁屁. All rights reserved.
+| 范围 | 授权口径 |
+|---|---|
+| 源代码与构建脚本（`*.swift` / `*.sh` / `*.py` / `*.plist` 等） | [MIT License](LICENSE)：可自由使用、修改、分发，须保留版权与许可声明 |
+| 应用名称「分刻」「Countmin」、App 图标与图标设计、卡通形象「刻刻」及品牌标识 | © 2026 逍狗屁屁. All rights reserved. |
+| `assets/` `screenshots/` `poster/` `manual-assets/` 下的图像、海报、截图、版式模板，以及手册成品与 DMG 安装包 | © 2026 逍狗屁屁. All rights reserved. |
 
-Sony 30th 主题为致敬初代 PlayStation 30 周年的**非官方配色**，PlayStation 及 Sony 相关标识为
+MIT 授权**不覆盖**上表后两行的视觉资产与品牌元素；未经书面许可不得将其用于商业用途或再分发，也不得用于暗示与本项目的官方关联。完整条款见 [LICENSE](LICENSE)。
+
+第三方声明：Sony 30th 主题为致敬初代 PlayStation 30 周年的**非官方配色**，PlayStation 及 Sony 相关标识为
 Sony Interactive Entertainment Inc. 等权利人的商标，版权归各自所有者；本应用与 Sony Interactive
 Entertainment 无任何关联或授权关系。

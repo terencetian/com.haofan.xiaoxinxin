@@ -1,7 +1,7 @@
-小薪薪 · 开发者与版本信息
+分刻 · 开发者与版本信息
 ════════════════════════════
 
-应用名称：小薪薪
+应用名称：分刻
 版本：1.0 (Build 1)
 开发者：逍狗屁屁
 标语：让每一秒都看得见价值
@@ -11,10 +11,10 @@ Bundle ID：com.haofan.xiaoxinxin
 ────────────────────────────────
 如何验证这份 app 的开发者信息：
 
-1. 应用内：设置页底部玻璃胶囊署名，或状态栏菜单「关于小薪薪」
-2. Finder：右键 小薪薪.app → 显示简介 → 版权 / 版本
+1. 应用内：设置页底部玻璃胶囊署名，或状态栏菜单「关于分刻」
+2. Finder：右键 分刻.app → 显示简介 → 版权 / 版本
 3. 命令行（任何人可执行）：
-   plutil -p /Applications/小薪薪.app/Contents/Info.plist | grep -i xinxin
+   plutil -p /Applications/分刻.app/Contents/Info.plist | grep -i xinxin
    输出应包含 XinXinDeveloper => "逍狗屁屁"
 
 ────────────────────────────────

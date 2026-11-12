@@ -108,4 +108,4 @@ def build_icns():
 if __name__ == "__main__":
     render_svg()
     build_icns()
-    print("完成。下一步：替换 小薪薪.app/Contents/Resources/AppIcon.icns 并重打包 dmg。")
+    print("完成。下一步：替换 分刻.app/Contents/Resources/AppIcon.icns 并重打包 dmg。")
