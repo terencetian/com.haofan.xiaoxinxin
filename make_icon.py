@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""小薪薪 App 图标生成：assets/AppIcon.svg (纯矢量) → 1024 PNG → iconset → AppIcon.icns
+"""分刻 App 图标生成：assets/AppIcon.svg (纯矢量) → 1024 PNG → iconset → AppIcon.icns
 
 设计说明：
   - 图形全部由矢量绘制，无第三方素材，不含 IP 角色特征

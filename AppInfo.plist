@@ -3,21 +3,21 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>小薪薪</string>
+	<string>分刻</string>
 	<key>CFBundleExecutable</key>
-	<string>小薪薪</string>
+	<string>分刻</string>
 	<key>CFBundleGetInfoString</key>
-	<string>小薪薪 2.6.6 · Your Money / Your Days · 开发者 逍狗屁屁 · 让每一秒都看得见价值</string>
+	<string>分刻 · Countmin 2.7.0 · Your Money / Your Days · 开发者 逍狗屁屁 · 记录每一段值得的时光</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.haofan.xiaoxinxin</string>
 	<key>CFBundleName</key>
-	<string>小薪薪</string>
+	<string>分刻</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.6.6</string>
+	<string>2.7.0</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,7 +30,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>47</string>
+	<string>48</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
@@ -40,6 +40,6 @@
 	<key>XinXinDeveloperTagline</key>
 	<string>让每一秒都看得见价值</string>
 	<key>XinXinReleaseDate</key>
-	<string>2026-11-10</string>
+	<string>2026-11-12</string>
 </dict>
 </plist>

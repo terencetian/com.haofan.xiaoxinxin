@@ -833,8 +833,8 @@ struct MoneyInlineView: View {
         let s = entry.snap
         let cd = s.countdown.map { " · \($0.name) \($0.daysLeft(at: entry.date)) 天" } ?? ""
         return Text(s.privacy
-                    ? String(format: "小薪薪 %.0f%%", s.shownRatio(at: entry.date) * 100) + cd
-                    : "小薪薪 ¥\(fmtMoney(s.earned(at: entry.date)))\(cd)")
+                    ? String(format: "分刻 %.0f%%", s.shownRatio(at: entry.date) * 100) + cd
+                    : "分刻 ¥\(fmtMoney(s.earned(at: entry.date)))\(cd)")
     }
 }
 
@@ -928,7 +928,7 @@ struct MoneyWidget: Widget {
             MoneySwitch(entry: entry)
                 .widgetURL(URL(string: "xiaoxinxin://money"))
         }
-        .configurationDisplayName("小薪薪 · 工资 MONEY")
+        .configurationDisplayName("分刻 · 薪酬 MONEY")
         .description("今日到账与进度，配色跟随 App 主题；开启隐私模式自动改为百分比")
         .supportedFamilies([.systemSmall, .systemMedium])
     }
@@ -943,7 +943,7 @@ struct DaysWidget: Widget {
             DaysSwitch(entry: entry)
                 .widgetURL(URL(string: "xiaoxinxin://days"))
         }
-        .configurationDisplayName("小薪薪 · 日子 DAYS")
+        .configurationDisplayName("分刻 · 日子 DAYS")
         .description("倒计时剩余天数与纪念日累计，配色跟随 App 主题")
         .supportedFamilies([.systemSmall, .systemMedium])
     }

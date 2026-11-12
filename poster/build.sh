@@ -22,6 +22,6 @@ PY
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 "$CHROME" --headless=new --disable-gpu --no-sandbox --hide-scrollbars \
   --force-device-scale-factor=1 --window-size=1080,1440 \
-  --screenshot="小薪薪-朋友圈海报-1080x1440.png" "file://$PWD/poster.html" >/dev/null 2>&1
+  --screenshot="countmin-朋友圈海报-1080x1440.png" "file://$PWD/poster.html" >/dev/null 2>&1
 
-echo "已生成：小薪薪-朋友圈海报-1080x1440.png"
+echo "已生成：countmin-朋友圈海报-1080x1440.png"

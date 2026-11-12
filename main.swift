@@ -1,4 +1,4 @@
-// 小薪薪 — macOS 悬浮小窗版 v2
+// 分刻 · Countmin — macOS 悬浮小窗版 v2
 // 功能：Liquid Glass 界面 / 设置页(月薪+工作日自动计算) / 金币进度条(图标吸色)
 //       明细芯片 / 迷你模式 / 状态栏常驻(含状态栏迷你金额显示)
 //       关闭默认收纳到状态栏(设置可选直接退出) / 校正工时
@@ -75,13 +75,14 @@ final class URLOpener: NSObject {
 
 // MARK: - 开发者信息 / 版本 / 版权 / 主题迭代记录
 let DEV_NAME = "逍狗屁屁"
-let DEV_TAGLINE = "让每一秒都看得见价值"
+// 副标题随 2.7 品牌焕新换成理念式 slogan（不堆关键词，规避商店关键词垃圾审核）
+let DEV_TAGLINE = "记录每一段值得的时光"
 // 版本号单一来源 = Info.plist 的 CFBundleShortVersionString / CFBundleVersion（plutil 改一处，界面全跟）
 // 裸二进制（脱离 bundle 跑自检）读不到 Info.plist 时用下面的兜底值
 let APP_VERSION = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.6.6"
+    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.7.0"
 let APP_BUILD = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "47"
+    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "48"
 
 /// 发版日期单一来源：Info.plist 的 XinXinReleaseDate（每次升版本一起改）。
 /// 脱离 bundle 跑自检时依次退回 Info.plist 文件修改日 → 当天，保证「跟随版本迭代」不会写死。
@@ -108,6 +109,9 @@ struct ReleaseRecord: Identifiable {
     let copyright: String
 }
 let RELEASE_HISTORY: [ReleaseRecord] = [
+    .init(version: "2.7.0", build: "48", date: "2026-11-12",
+          theme: "改名「分刻 · Countmin」：去金钱词，回归「每一分钟都值得记录」的时间内核；副标题改为「记录每一段值得的时光」",
+          copyright: "原名「小薪薪」带金钱词，限制了商店上架与功能延展。改名只动展示层：Bundle ID（com.haofan.xiaoxinxin）、数据目录、小组件扩展标识全部保持原样，老用户的打卡记录与设置无需迁移即可继承"),
     .init(version: "2.6.6", build: "47", date: "2026-11-10",
           theme: "小组件也扣午休了：主窗口 83%、小组件 95% 的口径差补平，休息时段进度冻结不再往上爬",
           copyright: "2.6.5 只把主程序的工时口径改成可计费秒数，扩展那一路仍按墙钟累加：午休期间小组件百分比照涨，下班还会顶到 112%。现在主程序把本班次休息区间写进快照，扩展按重叠秒数扣除，停表烘焙同样剔休息"),
@@ -194,7 +198,7 @@ func showAboutPanel() {
                              range: NSRange(r, in: text))
     }
     NSApp.orderFrontStandardAboutPanel(options: [
-        .applicationName: "小薪薪",
+        .applicationName: "分刻 · Countmin",
         .applicationVersion: APP_VERSION,
         .version: "Build \(APP_BUILD) · \(APP_RELEASE_DATE)",
         .credits: credits,
@@ -559,6 +563,8 @@ final class EarnModel: ObservableObject {
     private var napToken: NSObjectProtocol?
 
     // WidgetKit 数据快照：主 App（未沙盒）写出，小组件扩展（沙盒）经临时豁免授权读取
+    // 注意：路径里的「小薪薪」是 2.x 的历史目录名。2.7 改名为「分刻」后这里必须保持原样，
+    // 否则老用户的打卡记录、设置和小组件快照全部读不到——数据目录不做迁移是有意为之。
     static let widgetSnapURL: URL = {
         let dir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support/小薪薪", isDirectory: true)
@@ -582,6 +588,7 @@ final class EarnModel: ObservableObject {
             .appendingPathComponent("Library/Containers/com.haofan.xiaoxinxin.widget/Data", isDirectory: true)
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: dataDir.path, isDirectory: &isDir), isDir.boolValue else { return nil }
+        // 同上：「小薪薪」是历史目录名，随 2.7 改名保留，不做迁移
         let dir = dataDir.appendingPathComponent("Library/Application Support/小薪薪", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("widget-snapshot.json")
@@ -2260,7 +2267,7 @@ struct AppHeader: View {
                 GlassIconButton(symbol: "gearshape", help: "设置") { withAnimation { model.page = .settings } }
             }
             if !model.isButtonHidden(.close) {
-                GlassIconButton(symbol: "xmark", help: model.closeBehavior == "quit" ? "退出小薪薪" : "收纳到状态栏") {
+                GlassIconButton(symbol: "xmark", help: model.closeBehavior == "quit" ? "退出分刻" : "收纳到状态栏") {
                     model.requestClose()
                 }
             }
@@ -2295,7 +2302,7 @@ struct AppHeader: View {
     /// 标题 = 按钮：点开「关于」（版本 / Build / 发版日期 / 版权与迭代记录都在那）
     private var titleButton: some View {
         Button { showAboutPanel() } label: {
-            Text("小薪薪")
+            Text("分刻")
                 .font(.system(size: 14.5, weight: .heavy))
                 .foregroundStyle(AppPalette.text)
                 .lineLimit(1).fixedSize()
@@ -2305,7 +2312,7 @@ struct AppHeader: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help("关于小薪薪 v\(APP_VERSION)（Build \(APP_BUILD)）")
+        .help("关于 分刻 · Countmin v\(APP_VERSION)（Build \(APP_BUILD)）")
     }
 
     /// MONEY / DAYS 模块切换：整条弹性铺满中间，顶栏不留任何不可点的空白
@@ -4562,7 +4569,7 @@ struct SettingsView: View {
                     if let err = model.launchAtLoginError {
                         warnLine(err)
                     } else if LaunchAtLogin.needsApproval {
-                        warnLine("登录项已登记，还需到「系统设置 → 通用 → 登录项」允许小薪薪。")
+                        warnLine("登录项已登记，还需到「系统设置 → 通用 → 登录项」允许分刻。")
                     }
                     caption("配合「工作时间 · 自动打卡」可实现开机后到点自动开始计费，不用每天手动点打卡。")
                 }
@@ -4625,7 +4632,7 @@ struct SettingsView: View {
                     .shadow(color: .black.opacity(0.05), radius: 4, y: 1)
                 }
                 .buttonStyle(.plain)
-                .help("关于小薪薪 · 开发者 \(DEV_NAME)")
+                .help("关于 分刻 · Countmin · 开发者 \(DEV_NAME)")
                 .padding(.top, 8)
 
                 Spacer(minLength: 0)
@@ -5438,7 +5445,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         statusMenu.delegate = self
 
         applyDefaultIcon()
-        statusItem.button?.toolTip = "小薪薪（左键：显示/隐藏小窗，双指点按：菜单）"
+        statusItem.button?.toolTip = "分刻（左键：显示/隐藏小窗，双指点按：菜单）"
         // 菜单永久挂在图标上：触控板双指点按（右键）由系统直接弹出，事件层 100% 可靠；
         // 左键点击在 menuNeedsUpdate 里拦截，转为显示/隐藏小窗
         statusItem.menu = statusMenu
@@ -5455,7 +5462,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             img.isTemplate = false
             statusItem.button?.image = img
         } else {
-            let img = NSImage(systemSymbolName: "banknote.fill", accessibilityDescription: "小薪薪")
+            let img = NSImage(systemSymbolName: "banknote.fill", accessibilityDescription: "分刻")
             img?.isTemplate = true
             statusItem.button?.image = img
         }
@@ -5525,7 +5532,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 iconOnly = true
                 lastRenderKey = ""
                 applyDefaultIcon()
-                statusItem.button?.toolTip = "小薪薪（左键：显示/隐藏小窗，双指点按：菜单）"
+                statusItem.button?.toolTip = "分刻（左键：显示/隐藏小窗，双指点按：菜单）"
             }
             barModeActive = model.statusBarMode
             return
@@ -5745,12 +5752,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         statusMenu.addItem(toggle)
 
         statusMenu.addItem(.separator())
-        let about = NSMenuItem(title: "ⓘ 关于小薪薪 v\(APP_VERSION)（开发者 \(DEV_NAME)）",
+        let about = NSMenuItem(title: "ⓘ 关于 分刻 · Countmin v\(APP_VERSION)（开发者 \(DEV_NAME)）",
                                action: #selector(openAbout), keyEquivalent: "")
         about.target = self
         statusMenu.addItem(about)
 
-        let quit = NSMenuItem(title: "退出小薪薪", action: #selector(quitApp), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "退出分刻", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         statusMenu.addItem(quit)
     }
@@ -6144,7 +6151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             m.addItem(it)
         }
         m.addItem(.separator())
-        let q = NSMenuItem(title: "退出 小薪薪", action: #selector(quitNow), keyEquivalent: "")
+        let q = NSMenuItem(title: "退出 分刻", action: #selector(quitNow), keyEquivalent: "")
         q.target = self
         m.addItem(q)
         return m
@@ -6809,7 +6816,7 @@ MainActor.assumeIsolated {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { exit(0) }
         }
     }
-    app.mainMenu = buildMainMenu(appName: "小薪薪")
+    app.mainMenu = buildMainMenu(appName: "分刻")
     app.setActivationPolicy(.regular)   // 常规应用：Dock 图标 + Cmd-Tab，不会被当成后台偷跑
     // 开机自启动（--autostart）：静默停在状态栏，不弹主窗、不抢前台
     if CommandLine.arguments.contains("--autostart") {

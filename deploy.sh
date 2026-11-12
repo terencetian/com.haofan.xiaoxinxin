@@ -1,19 +1,29 @@
 #!/bin/bash
-# 小薪薪 构建 + 安装脚本
+# 分刻 · Countmin 构建 + 安装脚本（原名「小薪薪」，2.7 起改名）
 # 注意：签名必须在 /tmp 里做（workspace 目录下 codesign 的临时文件删除会被安全策略拦截）
 set -e
 cd "$(dirname "$0")"
 
 SDK=$(xcrun --show-sdk-path)
-SRC_APP="小薪薪.app"
+APP_NAME="分刻"
+SRC_APP="$APP_NAME.app"
 STAGE_ROOT="/tmp/xiaoxinxin-build"
-STAGE="$STAGE_ROOT/小薪薪.app"
-INSTALL="/Applications/小薪薪.app"
+STAGE="$STAGE_ROOT/$APP_NAME.app"
+INSTALL="/Applications/$APP_NAME.app"
+LEGACY_INSTALL="/Applications/小薪薪.app"
+BUNDLE_ID="com.haofan.xiaoxinxin"
 
-# 本机进程 pid（两种匹配都试，pgrep -x 对中文进程名未必生效）
+# 资源来源 bundle 随改名换目录，旧的 workspace 目录自动迁一次（内容不变）
+if [ ! -d "$SRC_APP" ] && [ -d "小薪薪.app" ]; then
+  mv "小薪薪.app" "$SRC_APP"
+  echo "    已将 workspace 里的 小薪薪.app 迁为 $SRC_APP"
+fi
+
+# 本机进程 pid（两种匹配都试，pgrep -x 对中文进程名未必生效；旧名也算，避免残留进程抢占）
 app_pids() {
-  { pgrep -x "小薪薪" 2>/dev/null
-    pgrep -f "$INSTALL/Contents/MacOS/小薪薪" 2>/dev/null
+  { pgrep -x "$APP_NAME" 2>/dev/null
+    pgrep -f "$INSTALL/Contents/MacOS/$APP_NAME" 2>/dev/null
+    pgrep -x "小薪薪" 2>/dev/null
   } | sort -u
 }
 
@@ -25,18 +35,23 @@ stop_app() {
     echo "    旧进程未运行"
     return 0
   fi
+  # 先按 bundle id 找（改名前后都能命中），再退回显示名
+  osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+  osascript -e "tell application \"$APP_NAME\" to quit" >/dev/null 2>&1 || true
   osascript -e 'tell application "小薪薪" to quit' >/dev/null 2>&1 || true
   for _ in $(seq 1 10); do
     [ -z "$(app_pids)" ] && { echo "    旧进程已正常退出"; return 0; }
     sleep 0.5
   done
   echo "    osascript 退出未生效（TCC 常拒），改用 SIGTERM"
+  pkill -TERM -x "$APP_NAME" 2>/dev/null || true
   pkill -TERM -x "小薪薪" 2>/dev/null || true
   for _ in $(seq 1 20); do
     [ -z "$(app_pids)" ] && { echo "    旧进程已终止（SIGTERM）"; return 0; }
     sleep 0.5
   done
   echo "    SIGTERM 无效，改用 SIGKILL"
+  pkill -KILL -x "$APP_NAME" 2>/dev/null || true
   pkill -KILL -x "小薪薪" 2>/dev/null || true
   for _ in $(seq 1 10); do
     [ -z "$(app_pids)" ] && { echo "    旧进程已终止（SIGKILL）"; return 0; }
@@ -70,7 +85,7 @@ echo "[3/8] 编译主程序前先停掉旧进程（否则编完也是旧二进�
 stop_app
 swiftc -O -sdk "$SDK" -target arm64-apple-macos14.0 \
   -Xfrontend -disable-sandbox \
-  main.swift Logic.swift -o "$STAGE/Contents/MacOS/小薪薪"
+  main.swift Logic.swift -o "$STAGE/Contents/MacOS/$APP_NAME"
 
 echo "[4/8] 组装 appex"
 AEX="$STAGE/Contents/PlugIns/Salary.appex"
@@ -104,6 +119,18 @@ find "$INSTALL" \( -name ".BC.T_*" -o -name "*.cstemp" \) -delete 2>/dev/null ||
 codesign -v --strict "$INSTALL/Contents/PlugIns/Salary.appex" || { echo "✗ 安装后 appex 校验失败，中止"; exit 1; }
 codesign -v --strict "$INSTALL" || { echo "✗ 安装后主 app 校验失败，中止"; exit 1; }
 echo "    签名校验：appex ✓ 主 app ✓"
+
+# 2.7 改名：旧名的安装包留着会和新的抢同一个 bundle id（Dock 里两个图标、启动项指向旧路径）。
+# 新版校验通过后才动它，且只移到废纸篓，不直接删——万一要回滚还能捞回来。
+if [ -d "$LEGACY_INSTALL" ]; then
+  mkdir -p "$HOME/.Trash"
+  DEST="$HOME/.Trash/小薪薪.app.$(date +%Y%m%d-%H%M%S)"
+  if mv "$LEGACY_INSTALL" "$DEST" 2>/dev/null; then
+    echo "    旧名安装包已移到废纸篓：$DEST"
+  else
+    echo "    ⚠ 旧名安装包挪不动，请手动删除 $LEGACY_INSTALL"
+  fi
+fi
 
 echo "[7/8] 重新注册扩展并重启 chronod / Dock"
 LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister

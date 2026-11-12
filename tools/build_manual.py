@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""把小薪薪产品手册.md 生成网页版 HTML（内联样式 + base64 截图）。
+"""把分刻产品手册.md 生成网页版 HTML（内联样式 + base64 截图）。
 
 用法：python3 tools/build_manual.py
-产物：小薪薪产品手册.html（单文件，可直接分发）
+产物：分刻产品手册.html（单文件，可直接分发）
 """
 import base64
 import os
@@ -11,8 +11,11 @@ import re
 import markdown
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SRC_MD = os.path.join(ROOT, "小薪薪产品手册.md")
-OUT_HTML = os.path.join(ROOT, "小薪薪产品手册.html")
+# 2.7 改名：手册也跟着换名，旧名保留回退，历史分支仍能构建
+SRC_MD = os.path.join(ROOT, "分刻产品手册.md")
+if not os.path.exists(SRC_MD):
+    SRC_MD = os.path.join(ROOT, "小薪薪产品手册.md")
+OUT_HTML = os.path.join(ROOT, "分刻产品手册.html")
 TPL_HTML = os.path.join(ROOT, "manual-assets", "template.html")
 
 EXTRA_CSS = """

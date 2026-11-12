@@ -1,7 +1,7 @@
 #!/bin/bash
-# 小薪薪 · 发布产物归档
+# 分刻 · Countmin 发布产物归档（原名「小薪薪」，2.7 起改名）
 #
-# 把当前构建产物复制到 ~/Documents/小薪薪-发布版本/v<版本>/，
+# 把当前构建产物复制到 ~/Documents/分刻-发布版本/v<版本>/，
 # 按「安装包 + 手册」成套存放，并在版本索引.md 末尾追加归档记录。
 #
 # 用法：
@@ -15,7 +15,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BASE="$HOME/Documents/小薪薪-发布版本"
+BASE="$HOME/Documents/分刻-发布版本"
+LEGACY_BASE="$HOME/Documents/小薪薪-发布版本"
+
+# 2.7 改名：老的归档目录一次性挪到新名下，历史版本不散落（只改名，不动内容）
+if [ ! -d "$BASE" ] && [ -d "$LEGACY_BASE" ]; then
+  mv "$LEGACY_BASE" "$BASE"
+  echo "· 发布归档目录已迁移：小薪薪-发布版本 → 分刻-发布版本"
+fi
 
 VER="${1:-}"
 shift || true
@@ -39,21 +46,26 @@ mkdir -p "$DEST"
 
 # ---------- 找安装包 ----------
 DMG=""
-for cand in "$ROOT/xiaoxinxin-v$VER.dmg" "$ROOT/小薪薪-v$VER.dmg" "$ROOT/小薪薪.dmg"; do
+for cand in "$ROOT/countmin-v$VER.dmg" "$ROOT/分刻-v$VER.dmg" \
+            "$ROOT/xiaoxinxin-v$VER.dmg" "$ROOT/小薪薪-v$VER.dmg" \
+            "$ROOT/分刻.dmg" "$ROOT/小薪薪.dmg"; do
   if [ -f "$cand" ]; then DMG="$cand"; break; fi
 done
 if [ -z "$DMG" ]; then
-  echo "✗ 找不到 $VER 的安装包（试过 xiaoxinxin-v$VER.dmg / 小薪薪-v$VER.dmg / 小薪薪.dmg）" >&2
+  echo "✗ 找不到 $VER 的安装包（试过 countmin- / 分刻- / xiaoxinxin- / 小薪薪- 等命名）" >&2
   exit 1
 fi
 
 # ---------- 读 dmg 内的版本与 Build，确认不是张冠李戴 ----------
 read_plist() {
-  local mnt ver build
+  local mnt app pl="" ver build
   # hdiutil 输出是按 TAB 分列的，最后一段才是挂载点；用 awk 默认按空白切分会被卷名里的空格切坏
   mnt=$(hdiutil attach "$1" -nobrowse -readonly 2>/dev/null | tail -1 | awk -F'\t' '{print $NF}')
   [ -z "$mnt" ] && return 0
-  local pl="$mnt/小薪薪.app/Contents/Info.plist"
+  # 新名优先，旧的 2.6 及以前安装包仍能归档
+  for app in "分刻.app" "小薪薪.app"; do
+    if [ -f "$mnt/$app/Contents/Info.plist" ]; then pl="$mnt/$app/Contents/Info.plist"; break; fi
+  done
   if [ -f "$pl" ]; then
     ver=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$pl" 2>/dev/null || true)
     build=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$pl" 2>/dev/null || true)
@@ -69,21 +81,30 @@ if [ "$DMG_VER" != "$VER" ]; then
 fi
 
 # ---------- 复制 ----------
-cp -p "$DMG" "$DEST/小薪薪-v$VER-$PLATFORM.dmg"
-echo "✓ 安装包  $DEST/小薪薪-v$VER-$PLATFORM.dmg"
+cp -p "$DMG" "$DEST/countmin-v$VER-$PLATFORM.dmg"
+echo "✓ 安装包  $DEST/countmin-v$VER-$PLATFORM.dmg"
 
+# 手册：新名优先，旧名兼容
+MANUAL=""
+for f in "$ROOT/分刻产品手册.pdf" "$ROOT/小薪薪产品手册.pdf"; do
+  [ -f "$f" ] && { MANUAL="$f"; break; }
+done
 MANUAL_LABEL="—"
-if [ -f "$ROOT/小薪薪产品手册.pdf" ]; then
-  cp -p "$ROOT/小薪薪产品手册.pdf" "$DEST/小薪薪产品手册-v$VER.pdf"
-  echo "✓ 手册PDF $DEST/小薪薪产品手册-v$VER.pdf"
+if [ -n "$MANUAL" ]; then
+  cp -p "$MANUAL" "$DEST/分刻产品手册-v$VER.pdf"
+  echo "✓ 手册PDF $DEST/分刻产品手册-v$VER.pdf"
   MANUAL_LABEL="PDF"
-  if [ "$WITH_HTML" = "1" ] && [ -f "$ROOT/小薪薪产品手册.html" ]; then
-    cp -p "$ROOT/小薪薪产品手册.html" "$DEST/小薪薪产品手册-v$VER.html"
-    echo "✓ 手册HTML $DEST/小薪薪产品手册-v$VER.html"
+  HTML=""
+  for f in "$ROOT/分刻产品手册.html" "$ROOT/小薪薪产品手册.html"; do
+    [ -f "$f" ] && { HTML="$f"; break; }
+  done
+  if [ "$WITH_HTML" = "1" ] && [ -n "$HTML" ]; then
+    cp -p "$HTML" "$DEST/分刻产品手册-v$VER.html"
+    echo "✓ 手册HTML $DEST/分刻产品手册-v$VER.html"
     MANUAL_LABEL="PDF + 网页版"
   fi
 else
-  echo "! 未找到 小薪薪产品手册.pdf，本次只归档安装包"
+  echo "! 未找到产品手册 PDF，本次只归档安装包"
 fi
 
 # ---------- 校验和 ----------

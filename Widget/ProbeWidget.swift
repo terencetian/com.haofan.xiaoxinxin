@@ -16,7 +16,7 @@ struct ProbeProvider: TimelineProvider {
 struct ProbeView: View {
     let entry: ProbeEntry
     var body: some View {
-        Text("小薪薪 OK")
+        Text("分刻 OK")
             .font(.system(size: 14, weight: .bold))
     }
 }
@@ -26,7 +26,7 @@ struct ProbeWidget: Widget {
         StaticConfiguration(kind: "ProbeWidget", provider: ProbeProvider()) { entry in
             ProbeView(entry: entry)
         }
-        .configurationDisplayName("小薪薪探针")
+        .configurationDisplayName("分刻探针")
         .description("验证小组件扩展能否被系统加载")
         .supportedFamilies([.systemSmall])
     }

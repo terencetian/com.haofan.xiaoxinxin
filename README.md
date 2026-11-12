@@ -1,5 +1,7 @@
-# 小薪薪 · 让每一秒都看得见价值
+# 分刻 · Countmin · 记录每一段值得的时光
 
+> ✏️ **2.7 起由「小薪薪」更名为「分刻 · Countmin」**：去掉了金钱词，内核仍是「时间、刻度、值得记录」。Bundle ID 与数据目录未变，老用户升级后打卡记录、设置、小组件全部原样保留。
+>
 > 🌐 **在线介绍页**：https://terencetian.github.io/com.haofan.xiaoxinxin/
 >
 > 📱 **手机版（Android 尝鲜版）**：https://github.com/terencetian/xiaoxinxin-android
@@ -76,13 +78,13 @@
 
 ### 方式一：下载安装包（推荐）
 
-到 [Releases 页面](https://github.com/terencetian/com.haofan.xiaoxinxin/releases/latest) 下载最新版 DMG，打开后把「小薪薪」拖进「应用程序」。
+到 [Releases 页面](https://github.com/terencetian/com.haofan.xiaoxinxin/releases/latest) 下载最新版 DMG，打开后把「分刻」拖进「应用程序」。
 
 > 应用采用 **ad-hoc 签名**（未购买 Apple 开发者账号），首次打开需在
 > 「系统设置 → 隐私与安全性」底部点「仍要打开」，或执行：
 >
 > ```bash
-> xattr -dr com.apple.quarantine /Applications/小薪薪.app
+> xattr -dr com.apple.quarantine /Applications/分刻.app
 > ```
 
 ### 方式二：从源码构建
@@ -117,17 +119,18 @@ entitlements 会被覆盖导致不注册）→ `ditto` 安装 → 重新注册�
 ├── preview.html            # 界面设计预览
 ├── make_icon.py            # 图标生成脚本
 ├── deploy.sh               # 构建 + 安装脚本
-└── 小薪薪产品手册.md        # 完整产品手册
+└── 分刻产品手册.md          # 完整产品手册
 ```
 
 ## 版本
 
-当前 **v2.6.6**（Build 47 · 2026-11-10），属于 **2.0 系列**（2.0.0 起的大改版：三模块首页、四款主题、隐私模式、自定义工作日与倒计时）。更新记录见 [Releases](https://github.com/terencetian/com.haofan.xiaoxinxin/releases)。
+当前 **v2.7.0**（Build 48 · 2026-11-12），属于 **2.0 系列**（2.0.0 起的大改版：三模块首页、四款主题、隐私模式、自定义工作日与倒计时）。更新记录见 [Releases](https://github.com/terencetian/com.haofan.xiaoxinxin/releases)。
 
 ### 2.0 系列做了什么
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
+| **2.7.0 / Build 48** | **11-12** | 更名「分刻 · Countmin」：去金钱词，回归时间内核；副标题改为「记录每一段值得的时光」 |
 | 2.0.0 / Build 31 | 11-07 | 进度条统计内容可切换；自定义工作日、首页按钮显隐、隐私模式落地 |
 | 2.1.0 / Build 32 | 11-07 | 首页拆成三张独立进度卡：Your Money / Your Days |
 | 2.2.0 / Build 33 | 11-07 | 四款主题 + 无极调色 + 背景透明度；界面去 emoji，用字重与重点色建层级 |
@@ -136,9 +139,17 @@ entitlements 会被覆盖导致不注册）→ `ditto` 安装 → 重新注册�
 | 2.5.0 / Build 38 | 11-07 | 小组件按 MONEY / DAYS 拆成两个，配色跟随 App 主题 |
 | 2.6.0 / Build 41 | 11-07 | 顶栏重做成整条工具条；图标改成「一半人民币、一半沙漏」 |
 | 2.6.2 / Build 43 | 11-08 | 拖窗口改走系统拖窗循环（1:1 跟手）；顶部 / 底部各 12pt 固定拖拽带；点击不再穿透到后面的 App |
-| **2.6.6 / Build 47** | **11-10** | 小组件补上午休口径：休息时段进度冻结，不再出现主窗口 83%、小组件 95% 的偏差 |
+| 2.6.6 / Build 47 | 11-10 | 小组件补上午休口径：休息时段进度冻结，不再出现主窗口 83%、小组件 95% 的偏差 |
 | 2.6.5 / Build 46 | 11-09 | 午休不再算工时：9:00–18:00 休 60 分钟，16:38 从 95% 回到 83%，18:00 正好 100%；设置页新增「休息从几点开始」 |
 | 2.6.4 / Build 45 | 11-09 | 倒计时与纪念日支持修改已添加的事件；事件列表可按 ≡ 拖动排序，或用 ⇅ 菜单上移 / 下移 / 置顶 / 置底 |
+
+### 2.7.0 明细
+
+- **改名「分刻 · Countmin」**：原「小薪薪」带金钱词，把 App 框在「工资计时器」上，不利于商店上架与功能延展（倒计时 / 纪念日 / 时间价值）。新名取 `count + min`，双关 *Every minute counts*；中文「分刻」＝ 分钟 + 刻度 / 镌刻，指「为每一分钟建立记录」。
+- **只动展示层**：`CFBundleName` / `CFBundleDisplayName` / 可执行文件名 / 关于面板 / 菜单栏 / 通知 / 小组件显示名全部换成新名。界面口径：主界面、状态栏、通知用「分刻」，关于面板与菜单项用「分刻 · Countmin」。
+- **有意不动的**：Bundle ID `com.haofan.xiaoxinxin`、URL scheme `xiaoxinxin`、数据目录 `~/Library/Application Support/小薪薪`、小组件 kind（`SalaryWidget` / `DaysWidgetV2`）。改任何一个都要迁移老用户数据、或逼用户重新添加组件——改名不该有这种代价。
+- **产物与安装包**：`分刻.app`、`countmin-v<版本>-macos-arm64.dmg`；`deploy.sh` 装完会把旧的 `/Applications/小薪薪.app` 移进废纸篓（不直接删），避免同一个 bundle id 在 Dock 里出现两个图标、登录项指向旧路径。
+- 副标题从「让每一秒都看得见价值」换成「记录每一段值得的时光」。
 
 ### 2.6.6 明细
 
