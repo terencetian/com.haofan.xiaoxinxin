@@ -11,6 +11,9 @@ build/
 # 手册导出与预览（体积大，随 Release 分发）
 # 注：手册排版.html 是 A4 版式源（`Chrome --headless --print-to-pdf` 打 PDF 用），21 KB，入库以便复用版式
 小薪薪-交付/
+# 2.7 改名为「分刻」；旧名规则保留，历史分支检出时仍不会误提交大文件
+分刻产品手册.pdf
+分刻产品手册.html
 小薪薪产品手册.pdf
 小薪薪产品手册.html
 manual-assets/*.png

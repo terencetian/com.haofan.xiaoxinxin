@@ -115,14 +115,16 @@ echo "sha256："
 # ---------- 更新索引 ----------
 INDEX="$BASE/版本索引.md"
 if [ -f "$INDEX" ]; then
-  if grep -q "^| v$VER " "$INDEX"; then
+  case "$PLATFORM" in
+    macos-*) PLAT_LABEL="macOS / ${PLATFORM#macos-}" ;;
+    *)       PLAT_LABEL="$PLATFORM" ;;
+  esac
+  # 双端版本号各自独立，可能撞在同一个 v<版本> 目录里（如 macOS 2.7.0 与 Android 2.7.0）。
+  # 去重必须按「版本 + 平台」判据，只看版本号会把另一平台的归档记录吞掉。
+  if grep "^| v$VER " "$INDEX" | grep -qF "| $PLAT_LABEL |"; then
     echo
-    echo "· 索引里已有 v${VER}，未重复追加"
+    echo "· 索引里已有 v${VER}（${PLAT_LABEL}），未重复追加"
   else
-    case "$PLATFORM" in
-      macos-*) PLAT_LABEL="macOS / ${PLATFORM#macos-}" ;;
-      *)       PLAT_LABEL="$PLATFORM" ;;
-    esac
     ROW="| v${VER} | ${DMG_BUILD} | ${PLAT_LABEL} | $(date +%Y-%m-%d) | v${VER} | ${MANUAL_LABEL} | 归档于 $(date +%H:%M) |"
     printf '%s\n' "$ROW" >> "$INDEX"
     echo
