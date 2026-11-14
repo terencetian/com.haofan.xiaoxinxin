@@ -80,9 +80,9 @@ let DEV_TAGLINE = "记录每一段值得的时光"
 // 版本号单一来源 = Info.plist 的 CFBundleShortVersionString / CFBundleVersion（plutil 改一处，界面全跟）
 // 裸二进制（脱离 bundle 跑自检）读不到 Info.plist 时用下面的兜底值
 let APP_VERSION = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.7.0"
+    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.7.1"
 let APP_BUILD = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "48"
+    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "49"
 
 /// 发版日期单一来源：Info.plist 的 XinXinReleaseDate（每次升版本一起改）。
 /// 脱离 bundle 跑自检时依次退回 Info.plist 文件修改日 → 当天，保证「跟随版本迭代」不会写死。
@@ -109,6 +109,9 @@ struct ReleaseRecord: Identifiable {
     let copyright: String
 }
 let RELEASE_HISTORY: [ReleaseRecord] = [
+    .init(version: "2.7.1", build: "49", date: "2026-11-14",
+          theme: "修复非工作日仍会自动打卡：自动上班前先按班次开始日判工作日，周末与自定义休息日不再到点就计费",
+          copyright: "autoClockInIfNeeded() 原先只判断是否在 [计划上班, 计划下班) 时间窗内，从未查工作日规则；现补 isWorkDate(start, rule:)，判班次开始日以兼顾跨零点夜班。自动下班不拦——周末手动打卡加班仍可正常结束；开着「叠加法定节假日」时调休补班日照常打卡"),
     .init(version: "2.7.0", build: "48", date: "2026-11-12",
           theme: "改名「分刻 · Countmin」：去金钱词，回归「每一分钟都值得记录」的时间内核；副标题改为「记录每一段值得的时光」",
           copyright: "原名「小薪薪」带金钱词，限制了商店上架与功能延展。改名只动展示层：Bundle ID（com.haofan.xiaoxinxin）、数据目录、小组件扩展标识全部保持原样，老用户的打卡记录与设置无需迁移即可继承"),
@@ -1343,6 +1346,10 @@ final class EarnModel: ObservableObject {
               let start = scheduledStart, let end = scheduledEnd else { return }
         let now = Date.now
         guard now >= start, now < end else { return }        // 未到上班时间 / 已过下班时间
+        // 修复：非工作日（自定义周几 / 叠加的法定节假日）不再自动打卡。
+        // 判「班次开始日」而不是 Date.now——跨零点夜班的凌晨属于前一天的班，按前一天规则算。
+        // 工作日规则此前只用于算每月天数与日薪，自动打卡一直没引用，导致周六照打。
+        guard isWorkDate(start, rule: workdayRule) else { return }
         let key = shiftKey(start)
         guard autoInKey != key else { return }               // 本班次已自动打过（含跨零点前后半夜）
         autoInKey = key
@@ -6302,6 +6309,13 @@ func runSimAutoout(_ model: EarnModel) {    model.salaryText = "21000"
 // 场景4：上班时刻已过 1 小时 → 从中途（当前时刻）起算，不白送工时
 @MainActor
 func runSimAutoin(_ model: EarnModel) {
+    // 自检不能依赖「今天恰好是工作日」：修复非工作日自动打卡后，
+    // 若正好在周六 / 法定节假日跑，默认规则会把下面所有场景全拦住，看起来像回归失败。
+    func forceWorkday(_ m: EarnModel) {
+        m.useLegalHolidays = false      // 排除调休补班 / 法定假干扰
+        m.customWeekdays = Set(1...7)   // 七天全设为工作日
+    }
+    forceWorkday(model)
     model.salaryText = "21000"
     model.workStartText = timeStr(Date.now.addingTimeInterval(-60))
     model.workEndText = timeStr(Date.now.addingTimeInterval(4 * 3600))
@@ -6326,6 +6340,7 @@ func runSimAutoin(_ model: EarnModel) {
     ["salary", "working", "baseEarned", "clockInAt", "autoInKey", "workedBeforeSession",
      "overtimeSeconds", "dayKey", "dayLog"].forEach { ud2.removeObject(forKey: $0) }
     let late = EarnModel(ud: ud2)
+    forceWorkday(late)
     late.salaryText = "21000"
     late.workStartText = timeStr(Date.now.addingTimeInterval(-3600))
     late.workEndText = timeStr(Date.now.addingTimeInterval(3600))
@@ -6339,6 +6354,7 @@ func runSimAutoin(_ model: EarnModel) {
     ["salary", "working", "baseEarned", "clockInAt", "autoInKey", "workedBeforeSession",
      "overtimeSeconds", "dayKey", "dayLog"].forEach { ud3.removeObject(forKey: $0) }
     let manual = EarnModel(ud: ud3)
+    forceWorkday(manual)
     manual.salaryText = "21000"
     manual.workStartText = timeStr(Date.now.addingTimeInterval(-60))
     manual.workEndText = timeStr(Date.now.addingTimeInterval(4 * 3600))
@@ -6347,6 +6363,28 @@ func runSimAutoin(_ model: EarnModel) {
     manual.clockOut()           // 用户手动下班
     manual.tick()
     print("AUTOIN5| 手动下班后不重打 working=\(manual.working)（应为 false）")
+
+    // 场景6（非工作日回归）：把今天从工作日里勾掉 → 到点也不得自动打卡
+    let ud4 = UserDefaults(suiteName: "xiaoxinxin-sim-offday")!
+    ["salary", "working", "baseEarned", "clockInAt", "autoInKey", "workedBeforeSession",
+     "overtimeSeconds", "dayKey", "dayLog", "customWeekdays", "useLegalHolidays",
+     "workStartText", "workEndText"].forEach { ud4.removeObject(forKey: $0) }
+    let off = EarnModel(ud: ud4)
+    off.salaryText = "21000"
+    off.workStartText = timeStr(Date.now.addingTimeInterval(-60))
+    off.workEndText = timeStr(Date.now.addingTimeInterval(4 * 3600))
+    off.autoInEnabled = true
+    off.useLegalHolidays = false        // 排除调休补班日干扰，只看勾选的周几
+    let todayDow = Calendar.current.component(.weekday, from: Date.now)
+    off.customWeekdays = Set(1...7).subtracting([todayDow])
+    off.tick()
+    print("AUTOIN6| 今天设为非工作日 → 不自动打卡 working=\(off.working)（应为 false）")
+    print("AUTOIN6| log=[\(off.logText)]")
+
+    // 场景7：改回工作日 → 立刻恢复自动打卡，证明不是被 autoInKey 卡住
+    off.customWeekdays.insert(todayDow)
+    off.tick()
+    print("AUTOIN7| 改回工作日 → 恢复自动打卡 working=\(off.working)（应为 true）")
 }
 
 // 自检：--sim-v2 覆盖 2.0 全部新逻辑（独立 defaults 域，绝不碰真实数据）

@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>分刻</string>
 	<key>CFBundleGetInfoString</key>
-	<string>分刻 · Countmin 2.7.0 · Your Money / Your Days · 开发者 逍狗屁屁 · 记录每一段值得的时光</string>
+	<string>分刻 · Countmin 2.7.1 · Your Money / Your Days · 开发者 逍狗屁屁 · 记录每一段值得的时光</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -17,7 +17,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.7.0</string>
+	<string>2.7.1</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,7 +30,7 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>48</string>
+	<string>49</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
@@ -40,6 +40,6 @@
 	<key>XinXinDeveloperTagline</key>
 	<string>让每一秒都看得见价值</string>
 	<key>XinXinReleaseDate</key>
-	<string>2026-11-12</string>
+	<string>2026-11-14</string>
 </dict>
 </plist>
