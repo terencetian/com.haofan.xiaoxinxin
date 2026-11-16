@@ -46,7 +46,8 @@ mkdir -p "$DEST"
 
 # ---------- 找安装包 ----------
 DMG=""
-for cand in "$ROOT/countmin-v$VER.dmg" "$ROOT/分刻-v$VER.dmg" \
+# 带平台后缀的是当前标准命名（Release 资产名一致）；无后缀的是历史命名，留着兼容
+for cand in "$ROOT/countmin-v$VER-$PLATFORM.dmg" "$ROOT/countmin-v$VER.dmg" "$ROOT/分刻-v$VER.dmg" \
             "$ROOT/xiaoxinxin-v$VER.dmg" "$ROOT/小薪薪-v$VER.dmg" \
             "$ROOT/分刻.dmg" "$ROOT/小薪薪.dmg"; do
   if [ -f "$cand" ]; then DMG="$cand"; break; fi

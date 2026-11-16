@@ -136,6 +136,27 @@ echo "[7/8] 重新注册扩展并重启 chronod / Dock"
 LSR=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 $LSR -f "$INSTALL"
 pluginkit -a "$INSTALL/Contents/PlugIns/Salary.appex" 2>/dev/null || true
+
+# 图标换代后 Dock 仍显示旧图：bundle 里的 icns 明明换了，Dock 却照旧，
+# 因为系统里还注册着同 bundle id 的历史副本（build/小薪薪.app、废纸篓里的旧构建、
+# 已卸载的 DMG 卷），Dock 的图标解析会命中缓存里那份。
+# 这里顺手清掉 Dock 的图标缓存文件（可重建的缓存，会备份）并注销同 id 的历史副本。
+ICON_CACHE_BAK="/tmp/xiaoxinxin-iconcache-backup"
+mkdir -p "$ICON_CACHE_BAK" 2>/dev/null || true
+ic_n=0
+for f in /private/var/folders/*/*/C/com.apple.dock.iconcache; do
+  if [ -f "$f" ]; then
+    cp "$f" "$ICON_CACHE_BAK/iconcache-$ic_n.db" 2>/dev/null || true
+    rm -f "$f" 2>/dev/null || true
+    ic_n=$((ic_n + 1))
+  fi
+done
+# 只注销本项目目录下的历史副本；/Applications 里那个刚注册过，别碰
+for stale in "$(dirname "$0")/build/小薪薪.app" "$(dirname "$0")/build/分刻.app"; do
+  [ -d "$stale" ] && $LSR -u "$stale" 2>/dev/null || true
+done
+
+killall iconservicesagent 2>/dev/null || true
 killall chronod 2>/dev/null || true
 killall Dock 2>/dev/null || true
 
