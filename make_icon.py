@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
-"""分刻 App 图标生成：assets/AppIcon.svg (纯矢量) → 1024 PNG → iconset → AppIcon.icns
+"""分刻 App 图标生成：assets/AppIcon-1024.png → iconset → AppIcon.icns
 
-设计说明：
-  - 图形全部由矢量绘制，无第三方素材，不含 IP 角色特征
-  - squircle 尺寸 824×824 / 圆角 185，符合 Apple macOS 图标网格 (1024 画布)
-  - 视觉上的 Liquid Glass 效果在此烘焙为 PNG；若日后需上架 App Store 用
-    Icon Composer 出分层素材，只需保留 svg 的图形层
+2026-11-16 起图标与 iOS 端统一为「小刻」形象定稿，源图不再由本脚本生成。
+
+源图出处（唯一可信来源）：
+  Countmin-iOS/Countmin/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon.png
+  即《小刻品牌形象手册 V1.0》定稿：1024×1024 / RGB / 不透明深紫底，
+  iOS 自己裁圆角，所以 macOS 端直接沿用同一张满幅图，不做二次重绘。
+
+改图标的正确姿势：
+  1. 先把 iOS 工程里的 AppIcon.png 覆盖到 assets/AppIcon-1024.png
+  2. 再跑 python3 make_icon.py（只重出 iconset + icns，不改动源图）
+  3. 同步 分刻.app/Contents/Resources/AppIcon.icns，然后跑 deploy.sh 重建
+
+历史：2.6.0 那版「一半人民币 + 一半沙漏」的纯矢量稿留在
+  assets/AppIcon-legacy.svg，仅作存档，不参与任何构建。
 
 用法：python3 make_icon.py
 """
@@ -14,63 +23,22 @@ import subprocess
 import sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-SVG = os.path.join(BASE, "assets", "AppIcon.svg")
 OUT_DIR = os.path.join(BASE, "assets")
 ICON_1024 = os.path.join(OUT_DIR, "AppIcon-1024.png")
 ICONSET = os.path.join(OUT_DIR, "AppIcon.iconset")
 ICNS = os.path.join(OUT_DIR, "AppIcon.icns")
 
-CHROME_CANDIDATES = [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-]
 
+# ---------- 1. 校验源图（不生成、不重绘，保证与 iOS 同款） ----------
+def check_source():
+    from PIL import Image
 
-# ---------- 1. SVG → 1024 PNG（Chrome headless，透明背景） ----------
-def find_chrome():
-    for p in CHROME_CANDIDATES:
-        if os.path.exists(p):
-            return p
-    return None
-
-
-def render_svg():
-    chrome = find_chrome()
-    if not chrome:
-        if os.path.exists(ICON_1024):
-            print(f"未找到 Chrome，沿用已有 {ICON_1024}")
-            return
-        sys.exit("未找到 Chrome，无法渲染 SVG，且 assets/AppIcon-1024.png 不存在")
-
-    with open(SVG, encoding="utf-8") as f:
-        svg = f.read()
-    wrap = os.path.join(BASE, "_icon_render.html")
-    with open(wrap, "w", encoding="utf-8") as f:
-        f.write(
-            '<!doctype html><html><head><meta charset="utf-8"><style>'
-            "html,body{margin:0;padding:0;background:transparent;overflow:hidden}"
-            "svg{display:block;width:1024px;height:1024px}"
-            "</style></head><body>" + svg + "</body></html>"
-        )
-    subprocess.run(
-        [
-            chrome,
-            "--headless=new",
-            "--disable-gpu",
-            "--hide-scrollbars",
-            "--force-device-scale-factor=1",
-            "--default-background-color=00000000",
-            "--window-size=1024,1024",
-            f"--screenshot={ICON_1024}",
-            f"file://{wrap}",
-        ],
-        check=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    os.remove(wrap)
-    print(f"渲染完成: {ICON_1024}")
+    if not os.path.exists(ICON_1024):
+        sys.exit(f"缺源图 {ICON_1024}；请从 iOS 工程 AppIcon.appiconset/AppIcon.png 复制过来")
+    with Image.open(ICON_1024) as im:
+        if im.size != (1024, 1024):
+            sys.exit(f"源图尺寸异常: {im.size}，应为 1024×1024")
+        print(f"源图: {ICON_1024} ({im.size[0]}×{im.size[1]} {im.mode})")
 
 
 # ---------- 2. PNG → iconset → icns ----------
@@ -78,8 +46,6 @@ def build_icns():
     from PIL import Image
 
     src = Image.open(ICON_1024).convert("RGBA")
-    if src.size != (1024, 1024):
-        sys.exit(f"渲染尺寸异常: {src.size}，应为 1024×1024")
 
     if os.path.isdir(ICONSET):
         subprocess.run(["rm", "-rf", ICONSET], check=True)
@@ -106,6 +72,6 @@ def build_icns():
 
 
 if __name__ == "__main__":
-    render_svg()
+    check_source()
     build_icns()
-    print("完成。下一步：替换 分刻.app/Contents/Resources/AppIcon.icns 并重打包 dmg。")
+    print("完成。下一步：同步 分刻.app/Contents/Resources/AppIcon.icns 并跑 deploy.sh 重建。")

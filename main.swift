@@ -80,9 +80,9 @@ let DEV_TAGLINE = "记录每一段值得的时光"
 // 版本号单一来源 = Info.plist 的 CFBundleShortVersionString / CFBundleVersion（plutil 改一处，界面全跟）
 // 裸二进制（脱离 bundle 跑自检）读不到 Info.plist 时用下面的兜底值
 let APP_VERSION = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.7.1"
+    ?? ProcessInfo.processInfo.environment["XINXIN_VERSION"] ?? "2.8.0"
 let APP_BUILD = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
-    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "49"
+    ?? ProcessInfo.processInfo.environment["XINXIN_BUILD"] ?? "50"
 
 /// 发版日期单一来源：Info.plist 的 XinXinReleaseDate（每次升版本一起改）。
 /// 脱离 bundle 跑自检时依次退回 Info.plist 文件修改日 → 当天，保证「跟随版本迭代」不会写死。
@@ -98,6 +98,9 @@ let APP_COPYRIGHT_YEAR = String(Calendar.current.component(.year, from: Date()))
 let APP_COPYRIGHT_LINE = "© \(APP_COPYRIGHT_YEAR) \(DEV_NAME). 保留所有权利。"
 let SONY_COPYRIGHT_NOTICE =
     "Sony 30th 主题为致敬初代 PlayStation 30 周年的非官方配色。PlayStation 及 Sony 相关标识为 Sony Interactive Entertainment Inc. 等权利人的商标，版权归各自所有者；本应用与 Sony Interactive Entertainment 无任何关联或授权关系。"
+/// 品牌与形象归属：源代码 MIT，视觉资产与「小刻」形象保留所有权利
+let APP_BRAND_NOTICE =
+    "应用名称「分刻 / Countmin」、各端 App 图标、动画形象「小刻」（Xiaoke）的名称 / 造型 / 表情 / 动效设计，以及全部视觉素材与品牌标识，© \(APP_COPYRIGHT_YEAR) \(DEV_NAME). 保留所有权利，不在 MIT 源代码授权范围内；未经书面许可不得商用、再分发或暗示官方关联。"
 
 /// 主题与版权声明的迭代记录：关于面板、设置页「版本与版权」、README 共用这一张表
 struct ReleaseRecord: Identifiable {
@@ -109,6 +112,9 @@ struct ReleaseRecord: Identifiable {
     let copyright: String
 }
 let RELEASE_HISTORY: [ReleaseRecord] = [
+    .init(version: "2.8.0", build: "50", date: "2026-11-16",
+          theme: "全新「小刻」应用图标，与 iOS 版统一同一形象；补齐版权与形象归属说明",
+          copyright: "图标从「一半人民币、一半沙漏」换成 iOS 同款小刻头像：一枚会眨眼的沙漏精灵，桌面 Dock、Finder、关于面板、网页与海报全部同步。版权说明同时落到 LICENSE、README、应用关于面板、设置页「版本与版权」与产品手册：源代码仍走 MIT，应用名称、各端图标、小刻的名称 / 造型 / 表情 / 动效与全部视觉素材保留所有权利，不在 MIT 授权范围内，未经书面许可不得商用、再分发或暗示官方关联"),
     .init(version: "2.7.1", build: "49", date: "2026-11-14",
           theme: "修复非工作日仍会自动打卡：自动上班前先按班次开始日判工作日，周末与自定义休息日不再到点就计费",
           copyright: "autoClockInIfNeeded() 原先只判断是否在 [计划上班, 计划下班) 时间窗内，从未查工作日规则；现补 isWorkDate(start, rule:)，判班次开始日以兼顾跨零点夜班。自动下班不拦——周末手动打卡加班仍可正常结束；开着「叠加法定节假日」时调休补班日照常打卡"),
@@ -176,6 +182,7 @@ func aboutCreditsText() -> String {
     \(DEV_TAGLINE)
     v\(APP_VERSION) · Build \(APP_BUILD) · \(APP_RELEASE_DATE)
     \(APP_COPYRIGHT_LINE)
+    \(APP_BRAND_NOTICE)
 
     \(SONY_COPYRIGHT_NOTICE)
 
@@ -4603,6 +4610,7 @@ struct SettingsView: View {
                         .foregroundStyle(redDeep)
                     Text(APP_COPYRIGHT_LINE).font(.system(size: 10.5, weight: .medium))
                         .padding(.top, 3)
+                    caption(APP_BRAND_NOTICE)
                     caption(SONY_COPYRIGHT_NOTICE)
                     Divider().padding(.vertical, 6)
                     fieldLabel("主题与版权声明迭代记录")

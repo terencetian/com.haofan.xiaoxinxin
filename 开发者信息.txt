@@ -6,6 +6,9 @@
 开发者：逍狗屁屁
 标语：让每一秒都看得见价值
 版权：© 2026 逍狗屁屁. All rights reserved.
+形象归属：动画形象「小刻」（Xiaoke）及各端同款 App 图标（名称、造型、表情、
+          动效设计与矢量素材）© 2026 逍狗屁屁. All rights reserved.，不在
+          源代码 MIT 授权范围内；未经书面许可不得商用、再分发。
 Bundle ID：com.haofan.xiaoxinxin
 
 ────────────────────────────────

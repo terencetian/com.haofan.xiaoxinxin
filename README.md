@@ -116,7 +116,7 @@ entitlements 会被覆盖导致不注册）→ `ditto` 安装 → 重新注册�
 │   ├── SalaryWidget.swift  # WidgetKit 扩展
 │   ├── Salary.entitlements
 │   └── Salary-Info.plist
-├── assets/                 # 图标与素材（纯矢量原创绘制）
+├── assets/                 # 图标与素材（AppIcon-1024.png 为图标单一源）
 ├── screenshots/            # 界面截图
 ├── preview.html            # 界面设计预览
 ├── make_icon.py            # 图标生成脚本
@@ -126,13 +126,14 @@ entitlements 会被覆盖导致不注册）→ `ditto` 安装 → 重新注册�
 
 ## 版本
 
-当前 **v2.7.1**（Build 49 · 2026-11-14），属于 **2.0 系列**（2.0.0 起的大改版：三模块首页、四款主题、隐私模式、自定义工作日与倒计时）。更新记录见 [Releases](https://github.com/terencetian/com.haofan.xiaoxinxin/releases)。
+当前 **v2.8.0**（Build 50 · 2026-11-16），属于 **2.0 系列**（2.0.0 起的大改版：三模块首页、四款主题、隐私模式、自定义工作日与倒计时）。更新记录见 [Releases](https://github.com/terencetian/com.haofan.xiaoxinxin/releases)。
 
 ### 2.0 系列做了什么
 
 | 版本 | 日期 | 变化 |
 |---|---|---|
-| **2.7.1 / Build 49** | **11-14** | 修复非工作日仍自动打卡：周末与自定义休息日不再到点就计费 |
+| **2.8.0 / Build 50** | **11-16** | 全新「小刻」图标，与 iOS 版形象统一；补齐版权与形象归属说明 |
+| 2.7.1 / Build 49 | 11-14 | 修复非工作日仍自动打卡：周末与自定义休息日不再到点就计费 |
 | 2.7.0 / Build 48 | 11-12 | 更名「分刻 · Countmin」：去金钱词，回归时间内核；副标题改为「记录每一段值得的时光」 |
 | 2.0.0 / Build 31 | 11-07 | 进度条统计内容可切换；自定义工作日、首页按钮显隐、隐私模式落地 |
 | 2.1.0 / Build 32 | 11-07 | 首页拆成三张独立进度卡：Your Money / Your Days |
@@ -145,6 +146,13 @@ entitlements 会被覆盖导致不注册）→ `ditto` 安装 → 重新注册�
 | 2.6.6 / Build 47 | 11-10 | 小组件补上午休口径：休息时段进度冻结，不再出现主窗口 83%、小组件 95% 的偏差 |
 | 2.6.5 / Build 46 | 11-09 | 午休不再算工时：9:00–18:00 休 60 分钟，16:38 从 95% 回到 83%，18:00 正好 100%；设置页新增「休息从几点开始」 |
 | 2.6.4 / Build 45 | 11-09 | 倒计时与纪念日支持修改已添加的事件；事件列表可按 ≡ 拖动排序，或用 ⇅ 菜单上移 / 下移 / 置顶 / 置底 |
+
+### 2.8.0 明细
+
+- **新图标「小刻」**：从「一半人民币、一半沙漏」换成 iOS 版同款的小刻头像 —— 一枚会眨眼的沙漏精灵。桌面 Dock、Finder、关于面板、网页、海报、DMG 卷标全部同步，两端第一眼就是同一个 App。
+- **图标链路改成单一源**：`make_icon.py` 只认 `assets/AppIcon-1024.png`（1024 方图）出 iconset 与 icns，不再从 SVG 渲染；旧的 `AppIcon.svg` 留档为 `AppIcon-legacy.svg`。要换图标就换那张 PNG，重跑脚本与 `deploy.sh` 即可。
+- **版权与形象归属说清楚**：新增 `APP_BRAND_NOTICE`，同时落在关于面板、设置页「版本与版权」、`LICENSE`、README 与产品手册第十二章。口径是：**源代码仍走 MIT**；应用名称「分刻 / Countmin」、各端 App 图标、形象「小刻」（Xiaoke）的名称 / 造型 / 表情 / 动效设计以及全部视觉素材，版权保留，不在 MIT 授权范围内，未经书面许可不得商用、再分发或暗示官方关联。
+- 顺手把全套物料（`og-cover.png`、朋友圈 / 双端海报、手册配图）按新图标重渲染，避免网页与安装包里还是旧标识。
 
 ### 2.7.1 明细
 
@@ -209,10 +217,22 @@ entitlements 会被覆盖导致不注册）→ `ditto` 安装 → 重新注册�
 | 范围 | 授权口径 |
 |---|---|
 | 源代码与构建脚本（`*.swift` / `*.sh` / `*.py` / `*.plist` 等） | [MIT License](LICENSE)：可自由使用、修改、分发，须保留版权与许可声明 |
-| 应用名称「分刻」「Countmin」、App 图标与图标设计、卡通形象「刻刻」及品牌标识 | © 2026 逍狗屁屁. All rights reserved. |
+| 应用名称「分刻」「Countmin」、各端 App 图标与图标设计、品牌标识，以及**动画形象「小刻」（Xiaoke）**的名称、造型、`\| <` 表情、表冠等视觉元素与全部衍生表情 / 动效 / 矢量素材 | © 2026 逍狗屁屁. All rights reserved. |
 | `assets/` `screenshots/` `poster/` `manual-assets/` 下的图像、海报、截图、版式模板，以及手册成品与 DMG 安装包 | © 2026 逍狗屁屁. All rights reserved. |
 
 MIT 授权**不覆盖**上表后两行的视觉资产与品牌元素；未经书面许可不得将其用于商业用途或再分发，也不得用于暗示与本项目的官方关联。完整条款见 [LICENSE](LICENSE)。
+
+### 版权归属与小刻形象归属
+
+| 项目 | 归属 |
+|---|---|
+| 应用著作权（源代码、构建脚本、文档纯文本源文件） | © 2026 逍狗屁屁；按 [MIT License](LICENSE) 授权 |
+| 应用名称「分刻」「Countmin」及文字 / 图形标识 | © 2026 逍狗屁屁. All rights reserved. |
+| 各端 App 图标（iOS / macOS / Android 同款「小刻」定稿）与图标设计方案 | © 2026 逍狗屁屁. All rights reserved. |
+| 动画形象「小刻」（Xiaoke）：名称、造型、`\| <` 表情、表冠、腮红等视觉元素，以及基于该形象的表情、动效设计、矢量源稿与背景素材 | © 2026 逍狗屁屁. All rights reserved. |
+| `assets/` `screenshots/` `poster/` `manual-assets/` 下图像、海报、截图、版式模板，手册成品与 DMG / APK 安装包 | © 2026 逍狗屁屁. All rights reserved. |
+
+「小刻」是本项目的品牌 / 动画形象，不是开源素材：它连同 App 图标与品牌标识一起**保留所有权利**，不随源代码授权，也不因本仓库公开而进入公有领域。第三方名称（Sony / PlayStation / Liquid Glass 等）仅用于配色与风格的事实性说明，相关商标归各自权利人所有。
 
 第三方声明：Sony 30th 主题为致敬初代 PlayStation 30 周年的**非官方配色**，PlayStation 及 Sony 相关标识为
 Sony Interactive Entertainment Inc. 等权利人的商标，版权归各自所有者；本应用与 Sony Interactive
